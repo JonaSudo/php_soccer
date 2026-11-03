@@ -8,28 +8,26 @@ the npz; LUPUS stops before the tracking conversion, which is still G1-only.
 
 from __future__ import annotations
 
-import os
 
 import numpy as np
 import pytest
 
 import motion_matching.utils as mm_utils
 from motion_matching import run as mm_run
-from motion_matching.io.kick_io import validate_kick_npz
+from motion_matching.io.kick_io import load_ball_radius, validate_kick_npz
 from motion_matching.placeholder_clips import build_placeholder_databases
-from motion_matching.scenarios import skill_registry as sr
 from motion_matching.scenarios import soccer as S
 
 
 @pytest.fixture(scope="module")
 def placeholder_db(tmp_path_factory):
     db_dir = tmp_path_factory.mktemp("db")
-    infos = {r: build_placeholder_databases(r, tmp_path_factory.mktemp(f"clips_{r}"), db_dir) for r in ("g1", "lupus")}
-    frames = min(i["locomotion_frames"] for i in infos.values())
+    for robot in ("g1", "lupus"):
+        build_placeholder_databases(robot, tmp_path_factory.mktemp(f"clips_{robot}"), db_dir)
+    # Locomotion searches the whole database (its registry search range is not
+    # used), so only the database location needs redirecting.
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(mm_utils, "DATABASE_DIR", db_dir)
-        mp.setitem(sr.SKILL_REGISTRY, "locomotion", {**sr.SKILL_REGISTRY["locomotion"],
-                                                      "search_ranges": [(0, 10, frames - 2)]})
         yield db_dir
 
 
@@ -81,7 +79,7 @@ def test_kicks_have_one_contact_at_the_ball(g1_outputs) -> None:
         assert int(data["kick_side"]) == (0 if foot == "right" else 1)
         # ball rests on the ground and stays put until contact
         assert np.allclose(data["object_pos_w"][: c + 1], data["object_pos_w"][0])
-        assert data["object_pos_w"][0, 2] == pytest.approx(0.075)
+        assert data["object_pos_w"][0, 2] == pytest.approx(load_ball_radius())
         # command held at (v_before, 0) during the commit phase
         commit = data["kick_phase"] == 1
         assert commit.any()
