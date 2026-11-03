@@ -22,7 +22,7 @@ Per episode:
 * ``v_err`` / ``w_err``: RMS error of base forward speed and yaw rate against
   the commanded (v, omega) while walking (``kick_phase`` 0)
 * ``approach``, ``lateral``, ``speed``: ball x / |y| in the robot heading frame
-  at the episode start and the mean commanded v before the kick (grid axes)
+  at the episode start (|y| to the nearer foot if ``foot_offset_y`` > 0) and the mean commanded v before the kick (grid axes)
 """
 
 from __future__ import annotations
@@ -59,6 +59,9 @@ class KickMetricsCfg:
     max_dir_err_deg: float = 15.0
     fall_height: float = 0.30
     fall_up_z: float = 0.5  # cos(60 deg)
+    # Lateral ball offset is measured to the nearer kick foot at +-foot_offset_y
+    # (LUPUS: 0.133 m); 0 measures it to the base centre line.
+    foot_offset_y: float = 0.0
 
 
 def _wrap(a: torch.Tensor) -> torch.Tensor:
@@ -111,7 +114,9 @@ class KickEpisodeTracker:
             x = cy * d[:, 0] + sy * d[:, 1]
             y = -sy * d[:, 0] + cy * d[:, 1]
             self.approach = torch.where(new, x, self.approach)
-            self.lateral = torch.where(new, y.abs(), self.lateral)
+            fo = self.cfg.foot_offset_y
+            lat = torch.minimum((y - fo).abs(), (y + fo).abs()) if fo > 0 else y.abs()
+            self.lateral = torch.where(new, lat, self.lateral)
             self.started |= new
         self.steps += 1
 
@@ -228,7 +233,7 @@ class KickEvalGrid:
     """
 
     approach: tuple[float, ...] = (0.5, 1.0, 2.0, 3.0)  # m, ball ahead at episode start
-    lateral: tuple[float, ...] = (0.0, 0.05, 0.10, 0.25, 0.5)  # m, |y| of the ball
+    lateral: tuple[float, ...] = (0.0, 0.05, 0.10, 0.25, 0.5)  # m, |y| of the ball to the nearer foot
     speed: tuple[float, ...] = (0.0, 0.3, 0.6, 0.9)  # m/s, commanded v before the kick
     episodes_per_cell: int = 100
 

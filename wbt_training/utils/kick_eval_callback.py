@@ -44,6 +44,8 @@ class KickMetricsConfig:
     lateral: tuple[float, ...] = KickEvalGrid().lateral
     speed: tuple[float, ...] = KickEvalGrid().speed
     episodes_per_cell: int = 100
+    foot_offset_y: float = 0.133
+    """Half track width of LUPUS (m); the lateral grid axis is measured to the nearer foot."""
 
 
 @dataclass(frozen=True)
@@ -100,7 +102,8 @@ class KickMetricsEvalCallback(RLEvalCallback):
         env = training_loop.env
         self.env = env
         self.cfg = KickMetricsCfg(
-            dt=float(env.dt), window_s=config.window_s, min_kick_speed=config.min_kick_speed, max_dir_err_deg=config.max_dir_err_deg
+            dt=float(env.dt), window_s=config.window_s, min_kick_speed=config.min_kick_speed, max_dir_err_deg=config.max_dir_err_deg,
+            foot_offset_y=config.foot_offset_y,
         )
         self.grid = KickEvalGrid(config.approach, config.lateral, config.speed, config.episodes_per_cell)
         self.tracker = KickEpisodeTracker(env.num_envs, self.cfg, env.device)
