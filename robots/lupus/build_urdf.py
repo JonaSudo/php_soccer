@@ -244,6 +244,127 @@ def apply_mass_target(robot: ET.Element, target: dict | None) -> list[str]:
     return [f"mass_target: +{gap:.3f} kg lumped on {target['link']} ({target.get('source', '')})"]
 
 
+# --------------------------------------------------------------------------- collisions
+def segments(robot: ET.Element) -> dict[str, str]:
+    """Rigid segment of every link: the child link of the nearest movable joint above it (or the root)."""
+    by_child = {j.find("child").get("link"): j for j in robot.findall("joint")}
+    out: dict[str, str] = {}
+
+    def seg(link: str) -> str:
+        if link not in out:
+            j = by_child.get(link)
+            out[link] = link if j is None or j.get("type") != "fixed" else seg(j.find("parent").get("link"))
+        return out[link]
+
+    for l in robot.findall("link"):
+        seg(l.get("name"))
+    return out
+
+
+def fit_box(v: np.ndarray) -> tuple[np.ndarray, np.ndarray, list[float]]:
+    """Axis-aligned box (in the frame of ``v``): rotation, center, size."""
+    lo, hi = v.min(0), v.max(0)
+    return np.eye(3), (lo + hi) / 2, list(hi - lo)
+
+
+def fit_cylinder(v: np.ndarray, radius_quantile: float) -> tuple[np.ndarray, np.ndarray, float, float]:
+    """Cylinder along the main axis of ``v``: rotation (z = axis), center, radius, length."""
+    c0 = v.mean(0)
+    _, _, vt = np.linalg.svd(v - c0, full_matrices=False)
+    a = vt[0] / np.linalg.norm(vt[0])
+    t = (v - c0) @ a
+    center = c0 + a * (t.min() + t.max()) / 2
+    radial = np.linalg.norm((v - center) - np.outer((v - center) @ a, a), axis=1)
+    radius = float(np.quantile(radial, radius_quantile))
+    # rotation whose z column is a
+    x = np.cross(a, [1.0, 0.0, 0.0] if abs(a[0]) < 0.9 else [0.0, 1.0, 0.0])
+    x /= np.linalg.norm(x)
+    r = np.column_stack([x, np.cross(a, x), a])
+    return r, center, radius, float(t.max() - t.min())
+
+
+def simplify_collisions(robot: ET.Element, cfg: dict | None, mesh_dir: Path) -> list[str]:
+    """Replace the CAD collision meshes by one primitive per rigid segment.
+
+    Links in ``boxes`` (feet, trunk) get the axis-aligned box of their meshes
+    at the zero pose; a mesh filter restricts the box to matching meshes (the
+    foot box covers only the sole plate, so the sole and the ball contact
+    surface keep their real size). All other segments get a cylinder along the main axis of
+    their meshes (written as cylinder in the URDF, capsule in the MJCF).
+    Segments that already have primitive collisions (neck, head) keep them.
+    """
+    if not cfg or cfg.get("mode", "mesh") == "mesh":
+        return []
+    world = world_transforms(robot)
+    seg_of = segments(robot)
+    links = {l.get("name"): l for l in robot.findall("link")}
+    boxes = cfg.get("boxes", {})
+    verts: dict[str, list[np.ndarray]] = {}
+    for name, link in links.items():
+        for col in link.findall("collision"):
+            mesh = col.find("geometry/mesh")
+            if mesh is None:
+                continue
+            link.remove(col)
+            fname = mesh.get("filename").removeprefix("meshes/")
+            flt = boxes.get(seg_of[name])
+            if flt and flt not in fname:
+                continue
+            tris = load_stl(mesh_dir / fname)
+            t = world[name] @ origin_matrix(col.find("origin"))
+            v = np.unique(tris.reshape(-1, 3), axis=0) @ t[:3, :3].T + t[:3, 3]
+            verts.setdefault(seg_of[name], []).append(v)
+
+    log = []
+    for seg, vs in sorted(verts.items()):
+        v = np.concatenate(vs)
+        tl = world[seg]
+        col = ET.SubElement(links[seg], "collision", name=f"{seg}_collision")
+        if seg in boxes:
+            r, c, size = fit_box(v)
+            geom = ("box", {"size": " ".join(map(fmt, size))})
+            desc = f"box {np.round(size, 3).tolist()}"
+        else:
+            r, c, radius, length = fit_cylinder(v, cfg.get("radius_quantile", 0.9))
+            geom = ("cylinder", {"radius": fmt(radius), "length": fmt(length)})
+            desc = f"cylinder r={radius:.3f} l={length:.3f}"
+        rel_r = tl[:3, :3].T @ r
+        rel_p = tl[:3, :3].T @ (c - tl[:3, 3])
+        ET.SubElement(col, "origin", xyz=" ".join(map(fmt, rel_p)), rpy=" ".join(map(fmt, matrix_to_rpy(rel_r))))
+        ET.SubElement(ET.SubElement(col, "geometry"), geom[0], **geom[1])
+        log.append(f"collision {seg}: {desc}")
+    return log
+
+
+# --------------------------------------------------------------------------- base frame
+def reroot_base(robot: ET.Element, cfg: dict | None) -> list[str]:
+    """Move the base_link origin from the CAD origin (ground) to the pelvis.
+
+    ``cfg.origin`` is ``hip_pitch_midpoint`` or an explicit [x, y, z] in the
+    CAD base frame. Only base_link's own elements and the joints below it
+    change, so every other link keeps its pose relative to the robot.
+    """
+    if not cfg:
+        return []
+    base = next(l.get("name") for l in robot.findall("link") if l.get("name") not in {j.find("child").get("link") for j in robot.findall("joint")})
+    origin = cfg["origin"]
+    if origin == "hip_pitch_midpoint":
+        joints = {j.get("name"): j for j in robot.findall("joint")}
+        world = world_transforms(robot)
+        pts = [world[joints[n].find("parent").get("link")] @ origin_matrix(joints[n].find("origin")) for n in ("left_hip_pitch", "right_hip_pitch")]
+        origin = (pts[0][:3, 3] + pts[1][:3, 3]) / 2
+    shift = np.eye(4)
+    shift[:3, 3] = origin
+    base_link = next(l for l in robot.findall("link") if l.get("name") == base)
+    origins = [j.find("origin") for j in robot.findall("joint") if j.find("parent").get("link") == base]
+    origins += [el.find("origin") for tag in ("inertial", "visual", "collision") for el in base_link.findall(tag)]
+    for o in origins:
+        t = np.linalg.inv(shift) @ origin_matrix(o)
+        o.set("xyz", " ".join(map(fmt, t[:3, 3])))
+        o.set("rpy", " ".join(map(fmt, matrix_to_rpy(t[:3, :3]))))
+    return [f"base_link moved to {np.round(origin, 4).tolist()} (CAD frame)"]
+
+
 def build(source: Path, hw: dict, mesh_dir: Path) -> tuple[ET.ElementTree, dict, list[str]]:
     tree = ET.parse(source)
     robot = tree.getroot()
@@ -267,6 +388,9 @@ def build(source: Path, hw: dict, mesh_dir: Path) -> tuple[ET.ElementTree, dict,
             lim.attrib.update(lower=fmt(s["lower"]), upper=fmt(s["upper"]), effort=fmt(s["effort"]), velocity=fmt(s["velocity"]))
     add_neck(robot, hw["neck"], specs)
     log += apply_mass_target(robot, hw.get("mass_target"))
+    log += simplify_collisions(robot, hw.get("collision"), mesh_dir)
+    # last: every *_base coordinate in hardware.yaml is in the CAD base frame
+    log += reroot_base(robot, hw.get("base_frame"))
 
     for mesh in robot.iter("mesh"):
         fname = mesh.get("filename")

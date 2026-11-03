@@ -85,3 +85,55 @@ def test_mesh_inertia_of_unit_cube():
 def test_generated_files_are_up_to_date(tmp_path):
     tree, _, _ = build_urdf.build(LUPUS / "source/robot_model.urdf", HW, LUPUS / "meshes")
     assert build_urdf.total_mass(tree.getroot()) == pytest.approx(build_urdf.total_mass(URDF), abs=1e-6)
+
+
+def test_collisions_are_primitives_with_real_sole():
+    links = {l.get("name"): l for l in URDF.findall("link")}
+    assert not [c for c in URDF.iter("collision") if c.find("geometry/mesh") is not None]
+    for foot in ("left_foot_link", "right_foot_link"):
+        box = links[foot].find("collision/geometry/box")
+        size = sorted(map(float, box.get("size").split()))
+        # sole plate "footlow" from the CAD: 0.30 x 0.11 x 0.03 m
+        assert size == pytest.approx([0.03, 0.11, 0.30], abs=2e-3), foot
+
+
+def test_base_link_sits_at_hip_pitch_midpoint():
+    w = build_urdf.world_transforms(URDF)
+    joints = {j.get("name"): j for j in URDF.findall("joint")}
+    hips = [(w[joints[n].find("parent").get("link")] @ build_urdf.origin_matrix(joints[n].find("origin")))[:3, 3]
+            for n in ("left_hip_pitch", "right_hip_pitch")]
+    import numpy as np
+
+    assert (hips[0] + hips[1]) / 2 == pytest.approx(np.zeros(3), abs=1e-9)
+
+
+mujoco = pytest.importorskip("mujoco") if (LUPUS / "meshes").exists() else None
+
+
+@pytest.mark.skipif(mujoco is None, reason="CAD meshes or mujoco not present")
+def test_mjcf_mass_com_and_standing():
+    import numpy as np
+
+    m = mujoco.MjModel.from_xml_path(str(LUPUS / "lupus.xml"))
+    d = mujoco.MjData(m)
+    assert m.nu == 22 and m.nbody == 24
+    assert m.body_subtreemass[1] == pytest.approx(HW["mass_target"]["total"], abs=1e-3)
+    mujoco.mj_forward(m, d)
+    # center of mass inside the sole, above the ankles
+    feet = [d.geom_xpos[m.geom(f"{s}_foot_link_collision").id] for s in ("left", "right")]
+    com = d.subtree_com[1]
+    assert abs(com[0] - feet[0][0]) < 0.15 and abs(com[1]) < 0.01
+
+    # PD hold of the zero pose for 2 s: stays upright, only the feet touch the floor.
+    # Ankle stiffness must exceed m*g*h (~50 N*m/rad per ankle) or LUPUS tips over.
+    qadr = [m.jnt_qposadr[m.actuator_trnid[i, 0]] for i in range(m.nu)]
+    vadr = [m.jnt_dofadr[m.actuator_trnid[i, 0]] for i in range(m.nu)]
+    names = [m.joint(m.actuator_trnid[i, 0]).name for i in range(m.nu)]
+    kp = np.array([100.0 if any(k in n for k in ("hip", "knee", "ankle")) else 20.0 for n in names])
+    for _ in range(int(2.0 / m.opt.timestep)):
+        d.ctrl[:] = np.clip(-kp * d.qpos[qadr] - kp / 20 * d.qvel[vadr], m.actuator_ctrlrange[:, 0], m.actuator_ctrlrange[:, 1])
+        mujoco.mj_step(m, d)
+    assert d.qpos[2] == pytest.approx(m.body_pos[1][2], abs=0.01)
+    assert abs(d.qpos[3]) > 0.999  # quaternion w: no tilt
+    touching = {m.body(m.geom_bodyid[g]).name for c in d.contact[: d.ncon] for g in (c.geom1, c.geom2)} - {"world"}
+    assert touching == {"left_foot_link", "right_foot_link"}
