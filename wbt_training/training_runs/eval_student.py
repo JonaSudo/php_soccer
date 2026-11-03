@@ -49,6 +49,7 @@ from wbt_training.utils.checkpoint import (
     load_saved_experiment_config as _load_saved_experiment_config_prefer_pt,
 )
 from wbt_training.utils.isaacsim_clock import use_php_isaacsim
+from wbt_training.utils.kick_eval_callback import KickEvalArgs, attach_kick_metrics
 
 
 @dataclass(frozen=True)
@@ -177,7 +178,11 @@ def _load_student_only(algo: BaseAlgo, ckpt_path: str) -> None:
         raise RuntimeError(
             f"Unhandled policy state keys in {ckpt_path}: {other_keys[:10]}"
         )
-    if hasattr(algo.policy, "depth_backbone") and not backbone_state:
+    # The LUPUS ball student's NoDepthBackbone has no parameters, so no keys.
+    backbone_has_params = hasattr(algo.policy, "depth_backbone") and any(
+        True for _ in algo.policy.depth_backbone.parameters()
+    )
+    if backbone_has_params and not backbone_state:
         raise RuntimeError(f"No 'depth_backbone.*' keys found in {ckpt_path}")
 
     algo.policy.student.load_state_dict(student_state, strict=True)
@@ -204,6 +209,7 @@ def run_eval(
     saved_config: ExperimentConfig,
     saved_wandb_path: str | None,
     eval_cbs_cfg: EvalCallbacksConfig | None = None,
+    kick_args: KickEvalArgs | None = None,
     depth_viz_cfg: DepthVizConfig | None = None,
 ) -> None:
     # Mirror holosoma.train_agent: presets register a ``preprocess_hook`` that
@@ -248,6 +254,8 @@ def run_eval(
         if depth_viz_cfg is not None and depth_viz_cfg.show_depth:
             _attach_depth_viewer(algo)
 
+        if kick_args is not None:
+            attach_kick_metrics(algo, kick_args.kick_metrics)
         algo.evaluate_policy(max_eval_steps=tyro_config.training.max_eval_steps)
 
         # Report video output paths BEFORE close_simulation_app — Isaac Sim's
@@ -291,6 +299,13 @@ def main() -> None:
     )
     depth_viz_cfg, remaining_args = tyro.cli(
         DepthVizConfig,
+        return_unknown_args=True,
+        add_help=False,
+        args=remaining_args,
+        config=TYRO_CONIFG,
+    )
+    kick_args, remaining_args = tyro.cli(
+        KickEvalArgs,
         return_unknown_args=True,
         add_help=False,
         args=remaining_args,

@@ -60,7 +60,10 @@ from wbt_training.utils.checkpoint import (
 from wbt_training.utils.checkpoint import (
     load_saved_experiment_config as _load_saved_experiment_config_prefer_pt,
 )
+from holosoma.utils.tyro_utils import TYRO_CONIFG
+
 from wbt_training.utils.isaacsim_clock import use_php_isaacsim
+from wbt_training.utils.kick_eval_callback import KickEvalArgs, attach_kick_metrics
 
 
 def run_eval(
@@ -69,6 +72,7 @@ def run_eval(
     saved_config: ExperimentConfig,
     saved_wandb_path: str | None,
     eval_cbs_cfg: EvalCallbacksConfig | None = None,
+    kick_args: KickEvalArgs | None = None,
 ) -> None:
     tyro_config = use_php_isaacsim(tyro_config)
     tyro_config = apply_preprocess_hook(tyro_config)
@@ -128,6 +132,8 @@ def run_eval(
         algo.export(onnx_file_path=onnx_path)  # type: ignore[attr-defined]
         logger.info(f"Exported policy as onnx to: {onnx_path}")
 
+    if kick_args is not None:
+        attach_kick_metrics(algo, kick_args.kick_metrics)
     algo.evaluate_policy(max_eval_steps=tyro_config.training.max_eval_steps)
 
     if simulation_app:
@@ -145,6 +151,13 @@ def main() -> None:
         add_help=False,
         args=remaining_args,
     )
+    kick_args, remaining_args = tyro.cli(
+        KickEvalArgs,
+        return_unknown_args=True,
+        add_help=False,
+        args=remaining_args,
+        config=TYRO_CONIFG,
+    )
     checkpoint_cfg = dataclasses.replace(
         checkpoint_cfg,
         checkpoint=resolve_checkpoint_reference(checkpoint_cfg.checkpoint),
@@ -161,6 +174,7 @@ def main() -> None:
         saved_cfg,
         saved_wandb_path,
         eval_cbs_cfg=eval_cbs_cfg,
+        kick_args=kick_args,
     )
 
 
