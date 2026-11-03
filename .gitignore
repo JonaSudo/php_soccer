@@ -35,3 +35,6 @@ motions/
 
 # User-specific optional service configuration
 .env.local
+
+# LUPUS meshes come from the CAD export (project folder urdf_export), not git
+robots/lupus/meshes

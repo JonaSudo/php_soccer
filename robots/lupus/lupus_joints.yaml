@@ -1,0 +1,157 @@
+generated_by: robots/lupus/build_urdf.py
+total_mass_kg: 16.108
+joints:
+  left_hip_pitch:
+    lower: -2.0
+    upper: 1.0
+    effort: 34.0
+    velocity: 11.62389
+    armature: 0.03888
+    status: estimate
+  right_hip_pitch:
+    lower: -2.0
+    upper: 1.0
+    effort: 34.0
+    velocity: 11.62389
+    armature: 0.03888
+    status: estimate
+  left_hip_roll:
+    lower: -0.3665
+    upper: 1.5708
+    effort: 34.0
+    velocity: 11.62389
+    armature: 0.03888
+    status: cad
+  right_hip_roll:
+    lower: -1.5708
+    upper: 0.3665
+    effort: 34.0
+    velocity: 11.62389
+    armature: 0.03888
+    status: cad
+  left_hip_yaw:
+    lower: -1.0
+    upper: 1.0
+    effort: 34.0
+    velocity: 11.62389
+    armature: 0.03888
+    status: estimate
+  right_hip_yaw:
+    lower: -1.0
+    upper: 1.0
+    effort: 34.0
+    velocity: 11.62389
+    armature: 0.03888
+    status: estimate
+  left_knee:
+    lower: 0.0
+    upper: 2.3
+    effort: 34.0
+    velocity: 11.62389
+    armature: 0.03888
+    status: estimate
+  right_knee:
+    lower: 0.0
+    upper: 2.3
+    effort: 34.0
+    velocity: 11.62389
+    armature: 0.03888
+    status: estimate
+  left_ankle_pitch:
+    lower: -0.733
+    upper: 1.0996
+    effort: 14.0
+    velocity: 18.64012
+    armature: 0.02698
+    status: cad
+  right_ankle_pitch:
+    lower: -0.733
+    upper: 1.0996
+    effort: 14.0
+    velocity: 18.64012
+    armature: 0.02698
+    status: cad
+  left_ankle_roll:
+    lower: -0.6109
+    upper: 0.6109
+    effort: 9.45
+    velocity: 27.61499
+    armature: 0.01229
+    status: cad
+  right_ankle_roll:
+    lower: -0.6109
+    upper: 0.6109
+    effort: 9.45
+    velocity: 27.61499
+    armature: 0.01229
+    status: cad
+  left_shoulder_pitch:
+    lower: -3.1
+    upper: 1.0
+    effort: 34.0
+    velocity: 11.62389
+    armature: 0.03888
+    status: estimate
+  right_shoulder_pitch:
+    lower: -3.1
+    upper: 1.0
+    effort: 34.0
+    velocity: 11.62389
+    armature: 0.03888
+    status: estimate
+  left_shoulder_roll:
+    lower: -0.2
+    upper: 1.6
+    effort: 7.0
+    velocity: 18.64012
+    armature: 0.01349
+    status: estimate
+  right_shoulder_roll:
+    lower: -1.6
+    upper: 0.2
+    effort: 7.0
+    velocity: 18.64012
+    armature: 0.01349
+    status: estimate
+  left_shoulder_yaw:
+    lower: -1.57
+    upper: 1.57
+    effort: 7.0
+    velocity: 18.64012
+    armature: 0.01349
+    status: estimate
+  right_shoulder_yaw:
+    lower: -1.57
+    upper: 1.57
+    effort: 7.0
+    velocity: 18.64012
+    armature: 0.01349
+    status: estimate
+  left_elbow:
+    lower: -2.3
+    upper: 0.0
+    effort: 7.0
+    velocity: 18.64012
+    armature: 0.01349
+    status: estimate
+  right_elbow:
+    lower: -2.3
+    upper: 0.0
+    effort: 7.0
+    velocity: 18.64012
+    armature: 0.01349
+    status: estimate
+  head_yaw:
+    lower: -1.57
+    upper: 1.57
+    effort: 7.0
+    velocity: 18.6
+    armature: 0.0135
+    status: placeholder
+  head_pitch:
+    lower: -0.5
+    upper: 0.8
+    effort: 7.0
+    velocity: 18.6
+    armature: 0.0135
+    status: placeholder

@@ -1,0 +1,110 @@
+# LUPUS hardware data: single source for robots/lupus/build_urdf.py.
+#
+# The CAD export (source/robot_model.urdf) carries placeholder limits
+# (effort 1000, velocity 10, mostly +-pi), no armature, no neck and several
+# parts without mass. Everything here overrides that export. Values marked
+# `status: estimate` or `status: placeholder` still need confirmation on the
+# real robot; see README.md for the open questions.
+
+supply_voltage: 24.0   # V; datasheet speeds below are at 24 V
+
+# MyActuator X-series V4 product manual (2025-02-11), 24 V.
+# armature = rotor_inertia * gear_ratio^2 (reflected rotor inertia at the output).
+motors:
+  RMD-X4-36:
+    gear_ratio: 36.0
+    peak_torque: 34.0        # N*m
+    rated_torque: 11.5       # N*m
+    no_load_speed_rpm: 111   # output side
+    rated_speed_rpm: 83
+    rotor_inertia: 0.30e-4   # kg*m^2 (0.30 kg*cm^2, motor side)
+    mass: 0.36               # kg
+  RMD-X2-7:
+    gear_ratio: 28.17
+    peak_torque: 7.0
+    rated_torque: 2.5
+    no_load_speed_rpm: 178
+    rated_speed_rpm: 142
+    rotor_inertia: 0.17e-4
+    mass: 0.25
+
+# Which motor drives which joint. Derived from where the motor meshes sit in
+# the CAD tree (stator on the parent link, output flange on the child link).
+# Limits are in the URDF joint frame of the export (all axes +z of the joint
+# frame); signs were checked with forward kinematics in the zero pose:
+#   hip/shoulder pitch: negative = leg/arm swings forward
+#   knee: positive = flexion;  elbow: negative = flexion (forearm forward)
+#   left hip/shoulder roll: positive = outward; right side mirrored
+#   ankle pitch: positive = toes down
+joints:
+  # --- legs -----------------------------------------------------------------
+  left_hip_pitch:      {motor: RMD-X4-36, lower: -2.0,  upper: 1.0,  status: estimate}
+  right_hip_pitch:     {motor: RMD-X4-36, lower: -2.0,  upper: 1.0,  status: estimate}
+  left_hip_roll:       {motor: RMD-X4-36, lower: -0.3665, upper: 1.5708, status: cad}
+  right_hip_roll:      {motor: RMD-X4-36, lower: -1.5708, upper: 0.3665, status: cad}
+  left_hip_yaw:        {motor: RMD-X4-36, lower: -1.0,  upper: 1.0,  status: estimate}
+  right_hip_yaw:       {motor: RMD-X4-36, lower: -1.0,  upper: 1.0,  status: estimate}
+  left_knee:           {motor: RMD-X4-36, lower: 0.0,   upper: 2.3,  status: estimate}
+  right_knee:          {motor: RMD-X4-36, lower: 0.0,   upper: 2.3,  status: estimate}
+  # Ankle pitch/roll are driven by two RMD-X2-7 through a parallel linkage
+  # (see `ankle_linkage`); torque, speed and armature are derived there.
+  left_ankle_pitch:    {motor: ankle_linkage, axis: pitch, lower: -0.7330, upper: 1.0996, status: cad}
+  right_ankle_pitch:   {motor: ankle_linkage, axis: pitch, lower: -0.7330, upper: 1.0996, status: cad}
+  left_ankle_roll:     {motor: ankle_linkage, axis: roll,  lower: -0.6109, upper: 0.6109, status: cad}
+  right_ankle_roll:    {motor: ankle_linkage, axis: roll,  lower: -0.6109, upper: 0.6109, status: cad}
+  # --- arms -----------------------------------------------------------------
+  left_shoulder_pitch:  {motor: RMD-X4-36, lower: -3.1, upper: 1.0,  status: estimate}
+  right_shoulder_pitch: {motor: RMD-X4-36, lower: -3.1, upper: 1.0,  status: estimate}
+  left_shoulder_roll:   {motor: RMD-X2-7,  lower: -0.2, upper: 1.6,  status: estimate}
+  right_shoulder_roll:  {motor: RMD-X2-7,  lower: -1.6, upper: 0.2,  status: estimate}
+  left_shoulder_yaw:    {motor: RMD-X2-7,  lower: -1.57, upper: 1.57, status: estimate}
+  right_shoulder_yaw:   {motor: RMD-X2-7,  lower: -1.57, upper: 1.57, status: estimate}
+  left_elbow:           {motor: RMD-X2-7,  lower: -2.3, upper: 0.0,  status: estimate}
+  right_elbow:          {motor: RMD-X2-7,  lower: -2.3, upper: 0.0,  status: estimate}
+
+# Parallel ankle: two RMD-X2-7 on the shin (joints *_ankle_motor_1/2 in the
+# export) drive the foot via cranks ("hebel") and rods. A closed loop is not
+# representable in URDF, so the policy and the simulation act on the serial
+# equivalent ankle_pitch/ankle_roll; the robot converts to motor angles.
+# The motor joints become fixed (their rotor and crank masses stay on the shin).
+#   pitch: both motors same direction, rod lever d   -> ratio d/r
+#   roll:  motors opposite, lateral rod offset w     -> ratio w/r
+#   tau_joint = 2*tau_motor*ratio, omega_joint = omega_motor/ratio,
+#   armature_joint = 2*armature_motor*ratio^2
+ankle_linkage:
+  motor: RMD-X2-7
+  motor_joints: [left_ankle_motor_1, left_ankle_motor_2, right_ankle_motor_1, right_ankle_motor_2]
+  crank_radius_r: 0.040     # m, status: estimate from "hebel" mesh (~45 mm long)
+  pitch_lever_d: 0.040      # m, status: estimate (rod attachment to pitch axis)
+  roll_lever_w: 0.027       # m, from CAD: motors sit +-27 mm beside the ankle
+
+# Neck: missing in the CAD export. Placeholder geometry so the head mass and
+# the head-scan joints exist in sim; not part of the policy action space.
+neck:
+  status: placeholder
+  parent_link: Torso
+  yaw_origin_base: [0.0, 0.0, 0.96]   # m in base frame, top of torso shell
+  pitch_offset: [0.0, 0.0, 0.04]      # m from yaw joint
+  head_yaw:   {lower: -1.57, upper: 1.57, effort: 7.0, velocity: 18.6, armature: 0.0135}
+  head_pitch: {lower: -0.5,  upper: 0.8,  effort: 7.0, velocity: 18.6, armature: 0.0135}
+  neck_link: {mass: 0.25, size: [0.05, 0.05, 0.04]}   # yaw motor output + bracket
+  head_link: {mass: 0.40, size: [0.10, 0.12, 0.10], com: [0.01, 0.0, 0.05]}  # pitch motor + camera
+
+# Parts the export left at 1e-6 kg (no material in CAD) or with wrong mass.
+# `density` in g/cm^3 is applied to the mesh volume; `mass` sets it directly;
+# `scale` multiplies the exported mass. Matched on the mesh file name.
+mass_fixes:
+  - {mesh: RMD-X4-36_1__Volumenk_rper1.stl,     mass: 0.30995, note: "housing; datasheet 0.36 kg minus 0.05 kg flange part"}
+  - {mesh: RMD-X4-36_MIR1_1__Volumenk_rper1.stl, mass: 0.30995, note: "housing; datasheet 0.36 kg minus 0.05 kg flange part"}
+  - {mesh: RMD-X2-7_,          scale: 0.8335, note: "export sums to 0.30 kg, datasheet 0.25 kg"}
+  - {mesh: foot_1__Volumenk_rper1.stl, density: 2.70, note: "mirror part foot_MIR is aluminium"}
+  - {mesh: hebel_,             density: 2.70, note: "assumed aluminium"}
+  - {mesh: upup_,              density: 2.70, note: "assumed aluminium"}
+  - {mesh: kiub_,              density: 2.70, note: "assumed aluminium"}
+  - {mesh: lower-leg-versteifung_, density: 2.70, note: "assumed aluminium like Schienbein"}
+  - {mesh: upper_arm_1__Volumenk_rper1.stl, density: 0.48, note: "assumed print like Stumpf2/footlow"}
+  - {mesh: H_fteeinzelteol_,   density: 0.48, note: "assumed print"}
+  - {mesh: DIN_981_KM_,        density: 7.85, note: "steel lock nut"}
+
+# Measured total mass on a scale (kg). Fill in; build_urdf.py reports the gap.
+measured_mass: null
