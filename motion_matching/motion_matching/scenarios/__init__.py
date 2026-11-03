@@ -5,7 +5,9 @@ segments and skill triggers that produce one or more motion clips. Scenarios are
 selected via ``--scenario`` on the CLI, dispatched at runtime by name.
 
 To add a new scenario: define a function in ``builtin.py`` (or another module
-imported below) that returns ``(configs, speed_up_ratio)``.
+imported below) that returns ``(configs, speed_up_ratio)``. Parkour scenarios
+live in ``builtin.py`` (one-hot command), soccer ones in ``soccer.py``
+(continuous ``(v, omega)`` command plus ball and kick fields).
 """
 
 from motion_matching.scenarios import builtin as builtin  # re-export for getattr-style dispatch
@@ -27,6 +29,14 @@ from motion_matching.scenarios.builtin import (
     low_speed_roll_90,
     low_speed_step,
     random_locomotion,
+)
+from motion_matching.scenarios import soccer as soccer  # re-export for getattr-style dispatch
+from motion_matching.scenarios.soccer import (
+    stand_ball_outside_zone,
+    stand_kick,
+    walk_ball_offpath,
+    walk_kick,
+    walk_no_ball,
 )
 
 # These names are dispatched by ``getattr(motion_matching.scenarios, name)`` in
@@ -51,4 +61,11 @@ __all__ = [
     "low_speed_roll_90",
     "low_speed_step",
     "random_locomotion",
+    # Soccer (continuous (v, omega) command, kicks), see scenarios/soccer.py.
+    "soccer",
+    "stand_ball_outside_zone",
+    "stand_kick",
+    "walk_ball_offpath",
+    "walk_kick",
+    "walk_no_ball",
 ]

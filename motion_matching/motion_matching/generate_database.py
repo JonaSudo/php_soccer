@@ -8,81 +8,59 @@ import argparse
 import json
 import os
 from pathlib import Path
+from dataclasses import dataclass
 
 from motion_matching.kinematics.robot_spec import DEFAULT_ROBOT, ROBOT_SPECS, get_robot_spec
 from motion_matching.utils import db_path, ROBOT_MOTIONS_DIR
 from motion_matching.utils.data_utils import animation_mirror_xz, mirror_terrain
 
 
-def main() -> None:
-    """ Parse Command Line Arguments """
+@dataclass
+class DatabaseEntry:
+    """Where one (possibly mirrored) source clip landed inside a built database.
 
-    parser = argparse.ArgumentParser(description="Generate a motion-matching database for a robot (default: G1)")
-    parser.add_argument(
-        "--output",
-        "-o",
-        default="database_g1_climb_76_high_speed_up_test.bin",
-        help=(
-            "Output database filename. Must be a bare filename (no slashes, no '..', "
-            "not absolute); resolved against PHP_MOTION_DATABASE_DIR."
-        ),
-    )
-    parser.add_argument(
-        "--motion-file", type=Path,
-        default=ROBOT_MOTIONS_DIR / "climb_76_high_speed_up.npz",
-        help="Source NPZ containing qpos: [root_quat_wxyz, root_pos, dofs] in the robot's URDF joint order.",
-    )
-    parser.add_argument(
-        "--terrain-file", type=Path,
-        default=Path(db_path("terrain/climb_76_high_speed/box.obj")),
-        help="Terrain OBJ paired with the source motion; defaults to the released sample terrain.",
-    )
-    parser.add_argument("--fps", type=float, default=30, help="Source motion frame rate.")
-    parser.add_argument(
-        "--robot", default=DEFAULT_ROBOT, choices=sorted(ROBOT_SPECS), help="Robot spec to build the database for."
-    )
-    args = parser.parse_args()
-    if not np.isfinite(args.fps) or args.fps <= 0:
-        parser.error("--fps must be positive and finite")
+    Lets callers map annotations given in source-clip frames (kick contact
+    frames, ball positions) onto database frames. Positions are in the
+    database's world frame, which is the clip's world frame (y negated when
+    ``mirrored``) resampled to 60 fps.
+    """
 
-    # Reject anything other than a bare filename.
-    _out_arg = Path(args.output)
-    if _out_arg.is_absolute() or len(_out_arg.parts) != 1 or _out_arg.name in ("", ".", ".."):
-        raise ValueError(f"--output must be a bare filename (no path separators), got: {args.output!r}")
-    args.output = db_path(args.output)
+    filename: str
+    mirrored: bool
+    db_start: int
+    db_stop: int
+    source_frames: int
+    sim_rotations: np.ndarray  # (T_db, 4) wxyz simulation-bone rotation per database frame
+    foot_positions: np.ndarray  # (T_db, 2, 3) [left, right] foot bone world positions
 
-    # NOTE: Edit this list to point at the motion(s) you want to bake into the
-    # database. Each entry is [npz_file, add_mirror, speed_up, fps, terrain_file].
-    # Remember to update --output (or its default above) to a matching filename.
-    files = [
-        [
-            str(args.motion_file),  # g1_skill_motion
-            True,  # add_mirror
-            1,  # speed_up (1 is original speed)
-            args.fps,  # motion fps
-            str(args.terrain_file),  # terrain_file
-        ]
-    ]
+    def source_to_db_frame(self, source_frame: int) -> int:
+        """Database frame index of ``source_frame`` (nearest, after supersampling)."""
+        n_db = self.db_stop - self.db_start
+        if self.source_frames <= 1:
+            return self.db_start
+        local = int(round(source_frame * (n_db - 1) / (self.source_frames - 1)))
+        return self.db_start + min(max(local, 0), n_db - 1)
 
-    # Validate that every input file exists before any heavy work.
-    for entry in files:
-        npz_file, _, _, _, terrain_file = entry
-        if not Path(npz_file).is_file():
-            raise FileNotFoundError(f"Retargeted motion file not found: {npz_file}")
-        if not Path(terrain_file).is_file():
-            raise FileNotFoundError(f"Terrain file not found: {terrain_file}")
 
-    # Ensure output directory exists.
-    os.makedirs(os.path.dirname(args.output), exist_ok=True)
+def build_database(files: list, robot=None, output: str = "") -> list[DatabaseEntry]:
+    """Bake motion clips into a motion-matching database file at ``output``.
 
-    if len(files[0]) == 5:
-        terrain_files = list(set(terrain_file for _, _, _, _, terrain_file in files))
+    Args:
+        files: Entries ``[npz_file, add_mirror, speed_up, fps, terrain_file]``
+            (the terrain entry is not used here).
+        robot: Robot spec or name (default G1).
+        output: Destination ``.bin`` path.
+
+    Returns:
+        One :class:`DatabaseEntry` per baked (clip, mirror) pair, in database order.
+    """
+    entries: list[DatabaseEntry] = []
 
     """ Basic function for mirroring animation data with this particular skeleton structure """
 
     """ Process URDF Kinematics """
 
-    robot = get_robot_spec(args.robot)
+    robot = get_robot_spec(robot)
     skeleton = robot.skeleton
     joint_names = list(skeleton.joint_names)
     joint_parents = skeleton.joint_parents
@@ -299,6 +277,20 @@ def main() -> None:
             range_starts.append(offset)
             range_stops.append(offset + len(positions))
 
+            entries.append(
+                DatabaseEntry(
+                    filename=filename,
+                    mirrored=mirror,
+                    db_start=int(offset),
+                    db_stop=int(offset + len(positions)),
+                    source_frames=int(num_frames),
+                    sim_rotations=rotations[:, 0].copy(),
+                    foot_positions=global_positions[
+                        :, [bone_names.index(robot.left_foot_joint), bone_names.index(robot.right_foot_joint)]
+                    ].copy(),
+                )
+            )
+
             contact_states.append(contacts)
 
     """ Concatenate Data """
@@ -318,7 +310,7 @@ def main() -> None:
 
     print("Writing Database...")
 
-    with open(args.output, "wb") as f:
+    with open(output, "wb") as f:
         nframes = bone_positions.shape[0]
         nbones = bone_positions.shape[1]
         nranges = range_starts.shape[0]
@@ -334,6 +326,76 @@ def main() -> None:
         f.write(struct.pack("I", nranges) + range_stops.ravel().tobytes())
 
         f.write(struct.pack("II", nframes, ncontacts) + contact_states.ravel().tobytes())
+
+    return entries
+
+
+def main() -> None:
+    """ Parse Command Line Arguments """
+
+    parser = argparse.ArgumentParser(description="Generate a motion-matching database for a robot (default: G1)")
+    parser.add_argument(
+        "--output",
+        "-o",
+        default="database_g1_climb_76_high_speed_up_test.bin",
+        help=(
+            "Output database filename. Must be a bare filename (no slashes, no '..', "
+            "not absolute); resolved against PHP_MOTION_DATABASE_DIR."
+        ),
+    )
+    parser.add_argument(
+        "--motion-file", type=Path,
+        default=ROBOT_MOTIONS_DIR / "climb_76_high_speed_up.npz",
+        help="Source NPZ containing qpos: [root_quat_wxyz, root_pos, dofs] in the robot's URDF joint order.",
+    )
+    parser.add_argument(
+        "--terrain-file", type=Path,
+        default=Path(db_path("terrain/climb_76_high_speed/box.obj")),
+        help="Terrain OBJ paired with the source motion; defaults to the released sample terrain.",
+    )
+    parser.add_argument("--fps", type=float, default=30, help="Source motion frame rate.")
+    parser.add_argument(
+        "--robot", default=DEFAULT_ROBOT, choices=sorted(ROBOT_SPECS), help="Robot spec to build the database for."
+    )
+    args = parser.parse_args()
+    if not np.isfinite(args.fps) or args.fps <= 0:
+        parser.error("--fps must be positive and finite")
+
+    # Reject anything other than a bare filename.
+    _out_arg = Path(args.output)
+    if _out_arg.is_absolute() or len(_out_arg.parts) != 1 or _out_arg.name in ("", ".", ".."):
+        raise ValueError(f"--output must be a bare filename (no path separators), got: {args.output!r}")
+    args.output = db_path(args.output)
+
+    # NOTE: Edit this list to point at the motion(s) you want to bake into the
+    # database. Each entry is [npz_file, add_mirror, speed_up, fps, terrain_file].
+    # Remember to update --output (or its default above) to a matching filename.
+    files = [
+        [
+            str(args.motion_file),  # g1_skill_motion
+            True,  # add_mirror
+            1,  # speed_up (1 is original speed)
+            args.fps,  # motion fps
+            str(args.terrain_file),  # terrain_file
+        ]
+    ]
+
+    # Validate that every input file exists before any heavy work.
+    for entry in files:
+        npz_file, _, _, _, terrain_file = entry
+        if not Path(npz_file).is_file():
+            raise FileNotFoundError(f"Retargeted motion file not found: {npz_file}")
+        if not Path(terrain_file).is_file():
+            raise FileNotFoundError(f"Terrain file not found: {terrain_file}")
+
+    # Ensure output directory exists.
+    os.makedirs(os.path.dirname(args.output), exist_ok=True)
+
+    terrain_files = None
+    if len(files[0]) == 5:
+        terrain_files = list(set(terrain_file for _, _, _, _, terrain_file in files))
+
+    build_database(files, robot=args.robot, output=args.output)
 
     """ Process Terrain Files """
     if terrain_files is not None:

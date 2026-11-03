@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 import motion_matching.scenarios as scenarios
-from motion_matching.scenarios import builtin
+from motion_matching.scenarios import builtin, soccer
 
 # Scenario functions are the public (non-underscore) module-level functions in
 # builtin.py that are defined there (not imported helpers).
@@ -24,6 +24,7 @@ _SCENARIO_FNS = [
     for name, obj in inspect.getmembers(builtin, inspect.isfunction)
     if not name.startswith("_") and obj.__module__ == builtin.__name__
 ]
+_SOCCER_FNS = sorted(soccer.SOCCER_SCENARIOS)
 
 
 def test_at_least_the_known_scenarios_exist() -> None:
@@ -49,8 +50,13 @@ def test_dispatched_object_is_the_same_function() -> None:
 
 def test_all_lists_match_dispatchable_scenarios() -> None:
     # __all__ should cover every scenario fn (plus the 'builtin' re-export).
-    exported_scenarios = set(scenarios.__all__) - {"builtin"}
-    assert exported_scenarios == set(_SCENARIO_FNS)
+    exported_scenarios = set(scenarios.__all__) - {"builtin", "soccer"}
+    assert exported_scenarios == set(_SCENARIO_FNS) | set(_SOCCER_FNS)
+
+
+def test_soccer_scenarios_are_dispatchable() -> None:
+    for name in _SOCCER_FNS:
+        assert getattr(scenarios, name) is soccer.SOCCER_SCENARIOS[name]
 
 
 def test_random_locomotion_splits_offpath_obstacles_evenly() -> None:
