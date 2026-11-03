@@ -201,3 +201,63 @@ def test_ball_distillation_ppo_rejects_depth_latent():
     algo.config = SimpleNamespace(module=SimpleNamespace(depth_output_dim=32))
     with pytest.raises(ValueError):
         algo._build_policy()
+
+
+# ---------------------------------------------------------------------------
+# Presets lupus_kick_distill(_finetune)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", ["lupus_kick_distill", "lupus_kick_distill_finetune"])
+def test_cli_selects_lupus_kick_distill_presets(name):
+    import tyro
+    from holosoma.utils.tyro_utils import TYRO_CONIFG
+
+    from wbt_training.config_values import experiment
+
+    cfg = tyro.cli(experiment.AnnotatedExperimentConfig, args=[f"exp:{name.replace('_', '-')}"], config=TYRO_CONIFG)
+    assert cfg == experiment.DEFAULTS[name]
+
+
+def test_finetune_preset_follows_the_php_recipe_without_depth():
+    from wbt_training.config_values import experiment as E
+
+    teacher, cfg = E.lupus_kick_teacher, E.lupus_kick_distill_finetune
+    assert cfg.algo._target_ == "wbt_training.utils.student_teacher.BallDistillationPPO"
+    module = cfg.algo.config.module
+    assert module.depth_backbone == BD.NO_DEPTH_BACKBONE and module.depth_output_dim == 0
+    # Teacher MLP size must match the trained teacher's actor.
+    assert module.teacher_hidden_dims == [512, 256, 128]
+    # DAgger weight reaches 0.1 (ppo_coef 0.9) after the first half.
+    assert cfg.algo.config.dagger_end_epoch * 2 == cfg.algo.config.num_learning_iterations == 20000
+    # Same robot, scene, rewards (incl. ball terms) and DR as the teacher.
+    for field in ("robot", "scene", "reward", "termination", "randomization", "action"):
+        assert getattr(cfg, field) == getattr(teacher, field), field
+    assert {"ball_kick_direction", "ball_untouched", "ball_step_on"} <= set(cfg.reward.terms)
+    params = cfg.command.setup_terms["motion_command"].params
+    assert params["motion_config"].use_adaptive_timesteps_sampler is False
+    assert params["ppo_gate_enabled"] is True
+    assert cfg.command.setup_terms["motion_command"].func.endswith(":LupusKickMotionCommand")
+    relax = cfg.curriculum.step_terms["relax_termination"]
+    assert relax.params["term_names"] == ["bad_tracking"] and relax.params["target_multiplier"] == 2.0
+
+
+def test_distill_observation_groups():
+    from wbt_training.config_values import experiment as E
+    from wbt_training.config_values.lupus_kick import LUPUS_END_EFFECTORS, lupus_kick_actor_obs
+
+    obs = E.lupus_kick_distill_finetune.observation
+    actor, teacher = obs.groups["actor_obs"], obs.groups["teacher_obs"]
+    assert actor.terms["ball_detection"].params["object_name"] == "ball"
+    assert "object_pos_b" not in actor.terms  # student never sees the true ball
+    assert set(teacher.terms) == set(lupus_kick_actor_obs.terms) | {"which_motion"}
+    assert teacher.terms["which_motion"].params["bad_motion_body_pos_body_names"] == tuple(LUPUS_END_EFFECTORS)
+    assert "object_pos_b" in obs.groups["critic_obs"].terms
+
+
+def test_pure_preset_uses_ball_distillation():
+    from wbt_training.config_values import experiment as E
+    from wbt_training.utils.student_teacher import BallDistillation
+
+    assert E.lupus_kick_distill.algo._target_ == "wbt_training.utils.student_teacher.BallDistillation"
+    assert BallDistillation.export is BallDistillationPPO.export

@@ -274,6 +274,18 @@ class BallDistillationPPO(PhpDistillationPPO):
         export_ball_student_onnx(self.env, self.policy, str(path.parent), filename=path.name)
 
 
+class BallDistillation(PhpDistillation):
+    """Pure-DAgger variant of :class:`BallDistillationPPO` (no depth, one ONNX)."""
+
+    def _build_policy(self) -> None:
+        if int(self.config.module.depth_output_dim) != 0:
+            raise ValueError("BallDistillation needs module.depth_output_dim=0 and the NoDepthBackbone")
+        super()._build_policy()
+
+    export_student_bundle = BallDistillationPPO.export_student_bundle
+    export = BallDistillationPPO.export
+
+
 ROUTING_TERM = "which_motion"
 
 
