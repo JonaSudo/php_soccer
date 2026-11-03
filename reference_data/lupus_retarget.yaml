@@ -84,9 +84,10 @@ toe_joints:
 ball:
   # Ball in the human captures (OmniContact, CMU): regular size 5.
   human_diameter: 0.22      # m (status: estimate, check OmniContact capture_meta.json)
-  # Ball LUPUS plays with. Open question in the plan ("Liga und Ball").
-  robot_diameter: 0.20      # m (status: estimate)
-  robot_mass: 0.45          # kg (status: estimate)
+  # Ball LUPUS plays with: null = take diameter from robots/ball/ball.yaml
+  # (the one ball spec of the repo, open question "Liga und Ball").
+  robot_diameter: null      # m
+  robot_mass: null          # kg
 
 retargeting:
   fps: 30                   # clips are resampled to this rate before retargeting

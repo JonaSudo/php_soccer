@@ -37,7 +37,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from reference_data.human_clip import HumanClip
-from reference_data.retarget_model import build, load_config
+from reference_data.retarget_model import build, load_config, robot_ball_radius
 
 REPO = Path(__file__).resolve().parents[1]
 HOLOSOMA_RT = REPO / "thirdparty/holosoma/src/holosoma_retargeting"
@@ -109,7 +109,7 @@ def retarget(
     if max_frames is not None:
         clip = clip.trim(0, max_frames)
     with_ball = clip.has_ball if use_ball is None else (use_ball and clip.has_ball)
-    r_robot = float(cfg["ball"]["robot_diameter"]) / 2
+    r_robot = robot_ball_radius(cfg)
     r_human = float(clip.ball_diameter or cfg["ball"]["human_diameter"]) / 2
 
     work = Path(work_dir or tempfile.mkdtemp(prefix="lupus_rt_"))

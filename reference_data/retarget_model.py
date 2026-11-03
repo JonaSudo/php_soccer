@@ -230,7 +230,7 @@ def build(out_dir: Path | str, cfg: dict | None = None, ball_radius: float | Non
     scene = None
     if ball_radius is not None:
         scene = out / "lupus_retarget_w_ball.xml"
-        add_ball(mj, ball_radius, float(cfg["ball"]["robot_mass"])).write(scene)
+        add_ball(mj, ball_radius, robot_ball_mass(cfg)).write(scene)
 
     joints = tuple(
         j.get("name")
@@ -241,13 +241,35 @@ def build(out_dir: Path | str, cfg: dict | None = None, ball_radius: float | Non
     return RetargetModel(xml_path, urdf_path, scene, sticking, joints)
 
 
+BALL_YAML = Path(__file__).resolve().parents[1] / "robots" / "ball" / "ball.yaml"
+
+
+def _ball_spec(key: str, default: float) -> float:
+    spec = yaml.safe_load(BALL_YAML.read_text()) if BALL_YAML.is_file() else {}
+    v = (spec or {}).get(key, default)
+    return float(v.get("value") if isinstance(v, dict) else v)
+
+
+def robot_ball_radius(cfg: dict | None = None) -> float:
+    """Robot ball radius: ``ball.robot_diameter`` of the config, else robots/ball/ball.yaml."""
+    cfg = cfg or load_config()
+    d = cfg.get("ball", {}).get("robot_diameter")
+    return float(d if d is not None else _ball_spec("diameter", 0.15)) / 2
+
+
+def robot_ball_mass(cfg: dict | None = None) -> float:
+    cfg = cfg or load_config()
+    m = cfg.get("ball", {}).get("robot_mass")
+    return float(m if m is not None else _ball_spec("mass", 0.2))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--ball", action="store_true", help="also write the scene with the robot ball")
     args = ap.parse_args()
     cfg = load_config()
-    radius = cfg["ball"]["robot_diameter"] / 2 if args.ball else None
+    radius = robot_ball_radius(cfg) if args.ball else None
     model = build(args.out, cfg, radius)
     print(model)
 

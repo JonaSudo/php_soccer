@@ -165,7 +165,7 @@ def stage_retarget(work: Path, force: bool, jobs: int, only: str | None) -> None
 
 def stage_post(entries: list[Entry], work: Path, out: Path, force: bool) -> int:
     from reference_data.clip_ops import LupusClip
-    from reference_data.postprocess import ClipSpec, process, write_manifest
+    from reference_data.postprocess import ClipSpec, kick_json_path, process, write_manifest
     from reference_data.verify import verify_clip
 
     out.mkdir(parents=True, exist_ok=True)
@@ -185,7 +185,7 @@ def stage_post(entries: list[Entry], work: Path, out: Path, force: bool) -> int:
             id=e.id, group=e.group, speed=e.speed, speeds=tuple(e.speeds) or ClipSpec.speeds,
             mirror=e.mirror, annotation=ann, notes=e.notes,
         )
-        done = sorted((out / e.group).glob(f"{e.id}_*.json"))
+        done = sorted(p for p in (out / e.group).glob(f"{e.id}_*.json") if not p.name.endswith(".kick.json"))
         if done and not force:
             continue
         for x in process(clip, spec, out):
@@ -194,6 +194,8 @@ def stage_post(entries: list[Entry], work: Path, out: Path, force: bool) -> int:
             rec = json.loads(x.json.read_text())
             rec["verify"] = {"ok": v.ok, "lowest": v.lowest, "contact_gap": v.contact_gap, "problems": v.problems}
             x.json.write_text(json.dumps(rec, indent=2))
+            if not v.ok:
+                kick_json_path(x.npz).unlink(missing_ok=True)
             status = "ok" if (x.accepted and v.ok) else "REJECT " + "; ".join(x.reasons + v.problems)
             print(f"post   {x.name}: {status}")
     # Manifest over everything in the output folder, not just this run.
@@ -201,7 +203,7 @@ def stage_post(entries: list[Entry], work: Path, out: Path, force: bool) -> int:
 
     allx = []
     for js in sorted(out.rglob("*.json")):
-        if js.name == "manifest.json":
+        if js.name == "manifest.json" or js.name.endswith(".kick.json"):
             continue
         rec = json.loads(js.read_text())
         ok = rec.get("accepted", False) and rec.get("verify", {}).get("ok", False)
@@ -214,7 +216,7 @@ def summary(out: Path) -> dict:
     """Seconds of accepted material per group (plan targets in the README)."""
     res: dict = {}
     for js in sorted(Path(out).rglob("*.json")):
-        if js.name == "manifest.json":
+        if js.name == "manifest.json" or js.name.endswith(".kick.json"):
             continue
         rec = json.loads(js.read_text())
         g = res.setdefault(rec["group"], {"clips": 0, "accepted": 0, "seconds": 0.0})

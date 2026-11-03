@@ -23,6 +23,8 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+import numpy as np
+
 from reference_data import feasibility
 from reference_data.annotate import KickParams, annotate, ball_track, mirror_fields, scale_frames
 from reference_data.clip_ops import LupusClip
@@ -134,8 +136,38 @@ def process(
         npz = var.save(out_dir / f"{name}.npz", extra)
         js = out_dir / f"{name}.json"
         js.write_text(json.dumps(record, indent=2, default=_json_default))
+        if spec.group in KICK_GROUPS and not mirrored and not var_reasons:
+            write_kick_json(out_dir / f"{name}.kick.json", npz.name, var.fps, spec.group, ann, var.ball_pos)
         exported.append(Exported(name, npz, js, not var_reasons, var_reasons))
     return exported
+
+
+def kick_json_path(npz: Path | str) -> Path:
+    npz = Path(npz)
+    return npz.with_name(npz.name[: -len(".npz")] + ".kick.json")
+
+
+def write_kick_json(path: Path, clip: str, fps: float, group: str, ann, ball_pos) -> Path:
+    """Clip annotation in the Phase 2 format (``motion_matching.io.kick_io``).
+
+    Only unmirrored clips get one: ``build_kick_database`` adds the mirrored
+    copy itself. Frames refer to the exported (already time-scaled) clip, so
+    ``speed_up`` is 1. The ball is given in the clip's world frame at contact.
+    """
+    rec = {
+        "clip": clip,
+        "fps": float(fps),
+        "speed_up": 1.0,
+        "kind": "run" if group == "walk_kick" else "stand",
+        "kick_foot": ann.kick_foot,
+        "entry_start": int(ann.entry_start),
+        "skill_start": int(ann.skill_start),
+        "contact_frame": int(ann.contact_frame),
+        "skill_end": int(ann.skill_end),
+        "ball_pos": [float(v) for v in np.asarray(ball_pos)[ann.contact_frame]],
+    }
+    path.write_text(json.dumps(rec, indent=2))
+    return path
 
 
 def _json_default(o):

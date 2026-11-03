@@ -333,6 +333,28 @@ def test_postprocess_and_verify(tmp_path):
     assert not verify_clip(out[0].npz).ok
 
 
+def test_kick_json_feeds_phase2_kick_database(tmp_path):
+    """The exported *.kick.json loads with kick_io and bakes into a LUPUS kick database."""
+    from motion_matching.build_kick_database import build_kick_database, collect_annotations
+    from reference_data.postprocess import ClipSpec, process
+
+    c = stand_kick_clip("right")
+    out = process(c, ClipSpec("synth", "stand_kick", speed=0.7), tmp_path,
+                  thresholds=F.Thresholds(torque_ratio=1e9))
+    folder = tmp_path / "stand_kick"
+    assert sorted(p.name for p in folder.glob("*.kick.json")) == ["synth_0.7x.kick.json"]  # no mirror copy
+    anns = collect_annotations([folder])
+    (clip_path, ann), = anns
+    assert clip_path == out[0].npz and ann.kind == "stand" and ann.kick_foot == "right"
+    rec = json.loads(out[0].json.read_text())["annotation"]
+    assert ann.contact_frame == rec["contact_frame"] and ann.speed_up == 1.0
+    side = build_kick_database(anns, robot="lupus", output=str(tmp_path / "db" / "database_lupus_kick_stand.bin"))
+    assert len(side.ranges) == 2 and {r.kick_foot for r in side.ranges} == {"left", "right"}
+    r = next(r for r in side.ranges if not r.mirrored)
+    assert r.search[0] <= r.search[1] <= r.contact_frame <= r.search[2]
+    assert np.allclose(r.ball_pos[:2], ann.ball_pos[:2])
+
+
 def test_lupus_raw_roundtrip(tmp_path):
     kin = kinematics()
     c = stand_kick_clip("left")
