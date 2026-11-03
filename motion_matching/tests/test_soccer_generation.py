@@ -2,8 +2,8 @@
 
 Builds tiny locomotion / kick_run / kick_stand databases from
 ``placeholder_clips``, then runs one config of every soccer scenario through
-``process_scenario`` and checks the exported kick fields. G1 goes all the way to
-the npz; LUPUS stops before the tracking conversion, which is still G1-only.
+``process_scenario`` and checks the exported kick fields in
+the exported npz, for G1 and LUPUS.
 """
 
 from __future__ import annotations
@@ -110,21 +110,35 @@ def test_negative_balls_are_placed_as_specified(g1_outputs) -> None:
             assert S.IGNORE_LATERAL_MIN - 0.05 <= d <= S.IGNORE_LATERAL_MAX + 0.05
 
 
+@pytest.mark.skipif(not (mm_utils.LUPUS_DIR / "meshes").exists(), reason="LUPUS CAD meshes not present")
+def test_lupus_kick_motions_export(placeholder_db, tmp_path) -> None:
+    for fn in (S.walk_kick, S.stand_kick, S.walk_no_ball):
+        configs, speed_up = fn(num_configs=1)
+        cfg = configs[0]
+        sys = _generate(cfg, tmp_path, "lupus", speed_up)
+        assert sys.robot.name == "lupus"
+        data = dict(np.load(tmp_path / f"{cfg['name']}_motion.npz"))
+        validate_kick_npz(data)
+        assert data["joint_pos"].shape[1] == sys.robot.num_dofs
+        assert data["vel_cmd"].shape == (len(data["joint_pos"]), 2)
+        expected_contacts = 1 if cfg["soccer"]["ball"]["mode"] == "kick" else 0
+        assert int(data["contact_frame"].sum()) == expected_contacts
+
+
 def test_lupus_kick_runs_through_motion_matching(placeholder_db, tmp_path, monkeypatch) -> None:
+    """Without the CAD meshes: everything up to the tracking export."""
     saved = {}
 
-    def fake_save(qpos, output_file, *, target_fps, source_fps, vel_cmd, extra_fields):
-        saved.update(qpos=qpos, vel_cmd=vel_cmd, extra=extra_fields)
+    def fake_save(qpos, output_file, *, vel_cmd, extra_fields, robot, **_kw):
+        saved.update(qpos=qpos, vel_cmd=vel_cmd, extra=extra_fields, robot=robot)
         return {}
 
     monkeypatch.setattr(mm_run, "save_motion_npz", fake_save)
-    monkeypatch.setattr(mm_run, "build_combined_terrain_mesh", lambda meshes: type("M", (), {"export": lambda s, f: None})())
     for fn in (S.walk_kick, S.stand_kick):
         configs, speed_up = fn(num_configs=1)
         sys = _generate(configs[0], tmp_path, "lupus", speed_up)
-        assert sys.robot.name == "lupus" and len(sys.kick_events) == 1
+        assert saved["robot"] == "lupus" and len(sys.kick_events) == 1
         assert saved["qpos"].shape[1] == 7 + sys.robot.num_dofs
-        n_out = len(saved["vel_cmd"])
-        fields = dict(saved["extra"])
-        validate_kick_npz(dict(fields, vel_cmd=saved["vel_cmd"].astype(np.float32)))
-        assert len(fields["kick_phase"]) == n_out and fields["contact_frame"].sum() == 1
+        fields = dict(saved["extra"], vel_cmd=saved["vel_cmd"].astype(np.float32))
+        validate_kick_npz(fields)
+        assert len(fields["kick_phase"]) == len(saved["vel_cmd"]) and fields["contact_frame"].sum() == 1

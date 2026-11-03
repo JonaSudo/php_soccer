@@ -1565,7 +1565,13 @@ def process_scenario(scenario: dict[str, Any], folder: str, force: bool, speed_u
         print(f"Added {len(offpath_obstacles)} off-path box obstacles")
 
     save_motion_npz(
-        qpos, output_file, target_fps=required_fps, source_fps=60, vel_cmd=vel_cmd, extra_fields=extra_fields
+        qpos,
+        output_file,
+        target_fps=required_fps,
+        source_fps=60,
+        vel_cmd=vel_cmd,
+        extra_fields=extra_fields,
+        robot=sys.robot.name,
     )
     print(f"Saved to {output_file}")
 
