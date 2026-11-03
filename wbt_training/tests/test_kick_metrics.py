@@ -230,3 +230,22 @@ def test_eval_callback_records_episodes(tmp_path, monkeypatch):
     assert not a["terminated"] and b["terminated"]
     assert a["v_err"] == pytest.approx(0.0, abs=1e-6)
     assert K.attach_kick_metrics(loop, K.KickMetricsConfig(enabled=False)) is None
+
+
+def test_jitter_flat_params_are_cli_overridable():
+    from wbt_training.config_values import experiment as E
+    from wbt_training.config_values.kick_command_obs import StudentCommandObsTerm
+    from wbt_training.utils.checkpoint import parse_saved_config_overrides
+
+    P = "--observation.groups.actor-obs.terms.command.params"
+    cfg = parse_saved_config_overrides(E.lupus_kick_distill_finetune, [f"{P}.jitter-enabled", "True", f"{P}.jitter-update-hz", "10"])
+    params = cfg.observation.groups["actor_obs"].terms["command"].params
+    assert params["jitter_enabled"] is True and params["jitter_update_hz"] == 10.0
+    n = 4
+    motion = SimpleNamespace(_vel_cmd=torch.zeros(5, 2), _kick_enable=torch.zeros(5), _kick_phase=torch.zeros(5))
+    cmd = SimpleNamespace(motion=motion, time_steps=torch.zeros(n, dtype=torch.long))
+    env = SimpleNamespace(num_envs=n, device="cpu", dt=0.02, command_manager=SimpleNamespace(get_state=lambda _n: cmd))
+    term = StudentCommandObsTerm(SimpleNamespace(params=params), env)
+    assert term.jitter is not None and term.jitter.cfg.update_hz == 10.0 and term.jitter.residuals is None
+    off = StudentCommandObsTerm(SimpleNamespace(params=E.lupus_kick_distill_finetune.observation.groups["actor_obs"].terms["command"].params), env)
+    assert off.jitter is None

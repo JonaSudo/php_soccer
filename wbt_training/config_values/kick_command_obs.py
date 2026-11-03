@@ -120,10 +120,15 @@ class StudentCommandObsTerm(ObservationTermBase):
         self._cached: torch.Tensor | None = None
         # Phase-5 jitter test: behavior-stack noise on top of the reference.
         self.jitter = None
-        if p.get("jitter"):
+        # Either a dict under "jitter" or flat "jitter_<field>" keys with
+        # "jitter_enabled" (flat keys can be overridden from the CLI).
+        jitter_params = dict(p.get("jitter") or {})
+        if p.get("jitter_enabled"):
+            jitter_params.update({k[len("jitter_") :]: v for k, v in p.items() if k.startswith("jitter_") and k != "jitter_enabled"})
+        if p.get("jitter") or p.get("jitter_enabled"):
             from wbt_training.utils.command_jitter import CommandJitter, CommandJitterCfg
 
-            jcfg = CommandJitterCfg.from_params({"dt": float(getattr(env, "dt", 0.02)), **dict(p["jitter"])})
+            jcfg = CommandJitterCfg.from_params({"dt": float(getattr(env, "dt", 0.02)), **jitter_params})
             self.jitter = CommandJitter(n, jcfg, device=self.device, generator=self.generator)
 
     # ------------------------------------------------------------------ utils

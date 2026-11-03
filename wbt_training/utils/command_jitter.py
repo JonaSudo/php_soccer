@@ -76,7 +76,7 @@ class CommandJitter:
         self.held_kick = torch.zeros(num_envs, device=self.device)
         self.phase = torch.zeros(num_envs, device=self.device)
         self.fresh = torch.ones(num_envs, dtype=torch.bool, device=self.device)
-        self.residuals = load_residuals(cfg.log_file, cfg.log_smooth_steps).to(self.device) if cfg.log_file else None
+        self.residuals = load_residuals(cfg.log_file, cfg.log_smooth_steps).to(self.device) if cfg.log_file else None  # "" = off
         self.offset = torch.zeros(num_envs, dtype=torch.long, device=self.device)
         self.reset(None)
 

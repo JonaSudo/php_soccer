@@ -2,6 +2,8 @@
 
 [Project overview](../README.md)
 
+LUPUS kick policy (ball student, one ONNX): see [deploy/README.md](deploy/README.md).
+
 Run the exported PHP depth policy in MuJoCo with the PHP-owned
 [run_php_sim.sh](../run_php_sim.sh) and
 [run_php_inference.sh](../run_php_inference.sh) launchers. They select the
