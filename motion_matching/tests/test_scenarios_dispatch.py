@@ -24,7 +24,8 @@ _SCENARIO_FNS = [
     for name, obj in inspect.getmembers(builtin, inspect.isfunction)
     if not name.startswith("_") and obj.__module__ == builtin.__name__
 ]
-_SOCCER_FNS = sorted(soccer.SOCCER_SCENARIOS)
+_SOCCER_ALL = {**soccer.SOCCER_SCENARIOS, **soccer.PHASE6_SCENARIOS}
+_SOCCER_FNS = sorted(_SOCCER_ALL)
 
 
 def test_at_least_the_known_scenarios_exist() -> None:
@@ -56,7 +57,7 @@ def test_all_lists_match_dispatchable_scenarios() -> None:
 
 def test_soccer_scenarios_are_dispatchable() -> None:
     for name in _SOCCER_FNS:
-        assert getattr(scenarios, name) is soccer.SOCCER_SCENARIOS[name]
+        assert getattr(scenarios, name) is _SOCCER_ALL[name]
 
 
 def test_random_locomotion_splits_offpath_obstacles_evenly() -> None:

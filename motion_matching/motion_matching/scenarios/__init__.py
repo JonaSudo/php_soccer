@@ -34,8 +34,11 @@ from motion_matching.scenarios import soccer as soccer  # re-export for getattr-
 from motion_matching.scenarios.soccer import (
     stand_ball_outside_zone,
     stand_kick,
+    stand_kick_dir,
     walk_ball_offpath,
+    walk_dribble,
     walk_kick,
+    walk_kick_dir,
     walk_no_ball,
 )
 
@@ -68,4 +71,8 @@ __all__ = [
     "walk_ball_offpath",
     "walk_kick",
     "walk_no_ball",
+    # Phase 6 (kick direction, dribble), soccer.PHASE6_SCENARIOS.
+    "stand_kick_dir",
+    "walk_dribble",
+    "walk_kick_dir",
 ]
