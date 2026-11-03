@@ -1,0 +1,96 @@
+# Settings for retargeting human clips onto LUPUS (Phase 1).
+# Every number that is a guess carries a "status" comment; change them here,
+# nothing else in reference_data/ hard-codes them.
+
+robot:
+  # Standing height of LUPUS (sole to top of the head collision box) in the
+  # current model. Used as robot_height / human_height for scaling clips.
+  height: 1.14            # m, from robots/lupus/lupus.xml (status: cad + k1_reference neck)
+  mjcf: robots/lupus/lupus.xml
+  urdf: robots/lupus/lupus.urdf
+  # Joints that the retargeter must not move (the neck belongs to the
+  # behavior, not to the reference motion).
+  locked_joints: [head_yaw, head_pitch]
+
+# Marker bodies added to the retargeting model (body-local offsets are derived
+# from the collision geometry, so they follow hardware.yaml after a rebuild).
+markers:
+  # Sole corners of the foot box, used for foot sticking (4 per foot).
+  sole_corner_inset: 0.01   # m, corners pulled inwards so they stay on the plate
+  # Toe point: on the sole centre line, this far behind the front edge. Human
+  # toe-base joints (LAFAN LeftToeBase, SMPL L_Toe/L_Foot) sit at the ball of
+  # the foot, not at the tip.
+  toe_from_front: 0.06      # m (status: estimate)
+  # Hand point: distal end of the forearm capsule.
+  # Head point: centre of the head collision box.
+
+# Human joint -> LUPUS body, per naming convention of the human clip.
+joint_mappings:
+  lafan:   # LAFAN1 BVH, OmniContact BVH (Motive/Xsens style names)
+    Hips: base_link
+    LeftUpLeg: left_upper_thigh_link
+    RightUpLeg: right_upper_thigh_link
+    LeftLeg: left_shin_link
+    RightLeg: right_shin_link
+    LeftFoot: left_foot_link
+    RightFoot: right_foot_link
+    LeftToeBase: left_toe_marker
+    RightToeBase: right_toe_marker
+    LeftArm: left_upper_arm_link
+    RightArm: right_upper_arm_link
+    LeftForeArm: left_forearm_link
+    RightForeArm: right_forearm_link
+    LeftHand: left_hand_marker
+    RightHand: right_hand_marker
+  smplh:   # OMOMO/InterMimic (holosoma demo data)
+    Pelvis: base_link
+    L_Hip: left_upper_thigh_link
+    R_Hip: right_upper_thigh_link
+    L_Knee: left_shin_link
+    R_Knee: right_shin_link
+    L_Ankle: left_foot_link
+    R_Ankle: right_foot_link
+    L_Toe: left_toe_marker
+    R_Toe: right_toe_marker
+    L_Shoulder: left_upper_arm_link
+    R_Shoulder: right_upper_arm_link
+    L_Elbow: left_forearm_link
+    R_Elbow: right_forearm_link
+    L_Wrist: left_hand_marker
+    R_Wrist: right_hand_marker
+  smplx:   # AMASS SMPL-X after holosoma prep_amass_smplx_for_rt.py (CMU, ACCAD)
+    Pelvis: base_link
+    L_Hip: left_upper_thigh_link
+    R_Hip: right_upper_thigh_link
+    L_Knee: left_shin_link
+    R_Knee: right_shin_link
+    L_Ankle: left_foot_link
+    R_Ankle: right_foot_link
+    L_Foot: left_toe_marker
+    R_Foot: right_toe_marker
+    L_Shoulder: left_upper_arm_link
+    R_Shoulder: right_upper_arm_link
+    L_Elbow: left_forearm_link
+    R_Elbow: right_forearm_link
+    L_Wrist: left_hand_marker
+    R_Wrist: right_hand_marker
+
+# Toe joints per naming convention (ground height + foot-sticking detection).
+toe_joints:
+  lafan: [LeftToeBase, RightToeBase]
+  smplh: [L_Toe, R_Toe]
+  smplx: [L_Foot, R_Foot]
+
+ball:
+  # Ball in the human captures (OmniContact, CMU): regular size 5.
+  human_diameter: 0.22      # m (status: estimate, check OmniContact capture_meta.json)
+  # Ball LUPUS plays with. Open question in the plan ("Liga und Ball").
+  robot_diameter: 0.20      # m (status: estimate)
+  robot_mass: 0.45          # kg (status: estimate)
+
+retargeting:
+  fps: 30                   # clips are resampled to this rate before retargeting
+  foot_sticking_velocity: 0.01   # m/frame at 30 fps, toe xy speed below = stance
+  step_size: 0.2
+  ground_range: [-10.0, 10.0]
+  ground_size: 15
