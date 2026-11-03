@@ -163,21 +163,27 @@ def retarget(
     sticking = rt_utils.extract_foot_sticking_sequence_velocity(
         joints, clip.joint_names, toe, velocity_threshold=float(rt_cfg["foot_sticking_velocity"])
     )
+    # Warm-up: the solver starts from the zero pose and moves at most
+    # step_size per iteration, so the first frames are not converged yet
+    # (jumps of 0.3 rad between frames). Hold the first frame for a while
+    # and drop those frames afterwards.
+    w = int(rt_cfg.get("warmup_frames", 0))
+    pad = lambda a: np.concatenate([np.repeat(a[:1], w, axis=0), a], axis=0)  # noqa: E731
     raw_path = work / "holosoma_out.npz"
     retargeter.retarget_motion(
-        human_joint_motions=joints,
-        object_poses=obj_mj,
-        object_poses_augmented=obj_robot,
+        human_joint_motions=pad(joints),
+        object_poses=pad(obj_mj),
+        object_poses_augmented=pad(obj_robot),
         object_points_local_demo=pts_demo,
         object_points_local=pts_robot,
-        foot_sticking_sequences=sticking,
+        foot_sticking_sequences=[sticking[0]] * w + list(sticking),
         q_a_init=q_init,
         q_nominal_list=None,
         original=True,
         dest_res_path=str(raw_path),
     )
     with np.load(raw_path) as d:
-        qpos = np.asarray(d["qpos"], dtype=np.float64)
+        qpos = np.asarray(d["qpos"], dtype=np.float64)[w:]
     n_robot = 7 + len(joint_names)
     out = dict(
         qpos_mj=qpos[:, :n_robot],

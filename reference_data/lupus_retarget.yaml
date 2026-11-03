@@ -92,5 +92,6 @@ retargeting:
   fps: 30                   # clips are resampled to this rate before retargeting
   foot_sticking_velocity: 0.01   # m/frame at 30 fps, toe xy speed below = stance
   step_size: 0.2
+  warmup_frames: 20         # first frame repeated, then dropped (solver convergence)
   ground_range: [-10.0, 10.0]
   ground_size: 15
