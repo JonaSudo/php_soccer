@@ -6,9 +6,10 @@ a fully-loaded :class:`MotionMatchingDatabase` per skill.
 For each entry, only ``search_ranges`` is mandatory. The other fields default
 to convention-driven values derived from the skill name:
 
-- ``bin`` defaults to ``f"database_g1_{family}.bin"`` where ``family`` is the
-  ``family`` field (or, if unset, the skill name itself).
-- ``features`` defaults to ``f"features_g1_{family}.pkl"`` (same family).
+- ``bin`` defaults to ``f"database_{robot}_{family}.bin"`` where ``family`` is the
+  ``family`` field (or, if unset, the skill name itself) and ``robot`` the
+  robot spec name (``g1`` unless ``--robot`` says otherwise).
+- ``features`` defaults to ``f"features_{robot}_{family}.pkl"`` (same family).
 - ``terrains`` defaults to ``[]`` (no terrain). Most skills DO need terrain;
   declare it here.
 - ``height_range`` defaults to ``(0.0, 0.0)`` (no ground-height constraint).
@@ -71,8 +72,9 @@ SKILL_REGISTRY = {
     # Bare locomotion DB — returned as `db` from init_databases() (not part of
     # traversal_dbs). No terrain. Search range is broad on purpose.
     LOCOMOTION_KEY: {
-        "bin": "database_g1_locomotion.bin",
-        "features": "features_g1_locomotion.pkl",
+        # ``{robot}`` is filled in by resolve_paths (G1 -> database_g1_locomotion.bin).
+        "bin": "database_{robot}_locomotion.bin",
+        "features": "features_{robot}_locomotion.pkl",
         "search_ranges": [(300, 320, 6000)],
     },
     # ---- Step family (uses database_g1_step.bin) ----
@@ -247,15 +249,43 @@ SKILL_REGISTRY = {
 }
 
 
-def resolve_paths(skill_name: str, cfg: dict) -> tuple[str, str]:
+# ---- Soccer kick skills (Phase 2) ----
+# Kept apart from SKILL_REGISTRY because their search ranges are not written
+# here: they come from the ``database_<robot>_<family>.kicks.json`` sidecar
+# that ``build_kick_database`` writes next to the database from the clip
+# annotations (Phase 1). ``kick`` selects the sidecar ranges by kick foot and
+# kind. There is no terrain; the ball replaces it and the ground stays at 0.
+#
+# kick_right / kick_left are kicks out of a run-up, kick_stand_* out of a calm
+# standing pose (free kicks). One set of right-foot clips serves both feet,
+# because every clip is baked mirrored too.
+KICK_SKILL_REGISTRY = {
+    "kick_right": {"family": "kick_run", "kick": {"foot": "right", "kind": "run"}},
+    "kick_left": {"family": "kick_run", "kick": {"foot": "left", "kind": "run"}},
+    "kick_stand_right": {"family": "kick_stand", "kick": {"foot": "right", "kind": "stand"}},
+    "kick_stand_left": {"family": "kick_stand", "kick": {"foot": "left", "kind": "stand"}},
+}
+
+
+def is_kick_skill(skill_name: str) -> bool:
+    return skill_name in KICK_SKILL_REGISTRY
+
+
+def all_skills() -> dict:
+    """Parkour and kick skills in one mapping (kick entries have no static search_ranges)."""
+    return {**SKILL_REGISTRY, **KICK_SKILL_REGISTRY}
+
+
+def resolve_paths(skill_name: str, cfg: dict, robot: str = "g1") -> tuple[str, str]:
     """Return (bin_filename, features_filename) for a skill, applying defaults.
 
-    Convention: ``bin = f"database_g1_{family}.bin"``,
-    ``features = f"features_g1_{family}.pkl"``.
+    Convention: ``bin = f"database_{robot}_{family}.bin"``,
+    ``features = f"features_{robot}_{family}.pkl"``. Explicit names may carry a
+    ``{robot}`` placeholder; names without one are used as written.
 
     The ``family`` field defaults to the skill name itself if unset.
     """
     family = cfg.get("family", skill_name)
-    bin_name = cfg.get("bin", f"database_g1_{family}.bin")
-    features_name = cfg.get("features", f"features_g1_{family}.pkl")
+    bin_name = cfg.get("bin", "database_{robot}_" + family + ".bin").format(robot=robot)
+    features_name = cfg.get("features", "features_{robot}_" + family + ".pkl").format(robot=robot)
     return bin_name, features_name

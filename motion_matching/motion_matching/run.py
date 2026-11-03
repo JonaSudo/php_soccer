@@ -36,9 +36,11 @@ from motion_matching.metadata.constants import (
     NUM_TERRAIN_VARIANTS as num_terrain_variants,
 )
 from motion_matching.scenarios.builtin import VEL_CMD_DIM
+from motion_matching.io.kick_io import KickSidecar, sidecar_path_for
 from motion_matching.scenarios.skill_registry import (
+    KICK_SKILL_REGISTRY,
     LOCOMOTION_KEY,
-    SKILL_REGISTRY,
+    all_skills,
     resolve_paths,
 )
 from motion_matching.utils import db_path
@@ -183,19 +185,36 @@ def init_databases(
 
     locomotion_db = None
     traversal_dbs = {}
-    for skill_name, cfg in SKILL_REGISTRY.items():
+    robot_name = get_robot_spec(robot).name
+    for skill_name, cfg in all_skills().items():
         if required_skills is not None and skill_name not in required_skills:
             continue
-        bin_name, feature_name = resolve_paths(skill_name, cfg)
+        # Kick skills are only loaded on request: their databases exist only
+        # once the kick clips are built (build_kick_database).
+        if required_skills is None and skill_name in KICK_SKILL_REGISTRY:
+            continue
+        bin_name, feature_name = resolve_paths(skill_name, cfg, robot=robot_name)
+        search_ranges = cfg.get("search_ranges")
+        kick_ranges = None
+        sidecar = None
+        if skill_name in KICK_SKILL_REGISTRY:
+            sidecar = KickSidecar.load(sidecar_path_for(db_path(bin_name)))
+            kick_ranges = sidecar.select(kick_foot=cfg["kick"]["foot"], kind=cfg["kick"]["kind"])
+            if not kick_ranges:
+                raise ValueError(f"{skill_name}: no {cfg['kick']} ranges in sidecar of {bin_name}")
+            search_ranges = [r.search for r in kick_ranges]
         loaded = _load_db(
             bin_name=bin_name,
             feature_name=feature_name,
-            search_ranges=cfg["search_ranges"],
+            search_ranges=search_ranges,
             terrains=cfg.get("terrains", None),
             height_range=cfg.get("height_range", (0.0, 0.0)),
             start_ground_fit_distance=cfg.get("start_ground_fit_distance"),
             robot=robot,
         )
+        if kick_ranges is not None:
+            loaded.kick_ranges = kick_ranges
+            loaded.ball_radius = sidecar.ball_radius
         if skill_name == LOCOMOTION_KEY:
             locomotion_db = loaded
         else:
@@ -384,6 +403,13 @@ class MotionMatchingSystem:
         self.stopped = False
 
         self.terrain_meshes_to_add = []  # List of (mesh, pos, rot, metadata)
+
+        # Soccer bookkeeping (no effect on the motion itself): one entry per
+        # kick transition with the world ball position and the matched kick
+        # range, and a per-captured-frame log filled by generate_segment /
+        # generate_skill_sequence so kick phases can be aligned to frames.
+        self.kick_events = []
+        self.frame_log = []
 
         self.ground_path_positions = []
         self.last_ground_path_position = None
@@ -662,19 +688,25 @@ class MotionMatchingSystem:
             t_pos = (mat1_pos - math.quat_mul_vec3(t_rot, mat2_pos)).astype(np.float32)
             t_pos[2] += self.curr_ground_height - traversal_db.search_start_ground_height
 
-            mesh, metadata = traversal_db.find_terrain_mesh(best_index)
+            kick_ranges = getattr(traversal_db, "kick_ranges", None)
+            if kick_ranges is not None:
+                # Ball instead of terrain: place the annotated resting ball
+                # with the same clip->world transform a terrain box would get.
+                self._place_kick_ball(traversal_db, kick_ranges, best_index, t_pos, t_rot)
+            else:
+                mesh, metadata = traversal_db.find_terrain_mesh(best_index)
 
-            # Transform metadata and mesh
-            original_pos = metadata["pos"]
-            transformed_pos = t_pos + math.quat_mul_vec3(t_rot, original_pos)
-            original_quat = metadata["quat"]
-            transformed_quat = math.quat_normalize(math.quat_mul(t_rot, original_quat))
+                # Transform metadata and mesh
+                original_pos = metadata["pos"]
+                transformed_pos = t_pos + math.quat_mul_vec3(t_rot, original_pos)
+                original_quat = metadata["quat"]
+                transformed_quat = math.quat_normalize(math.quat_mul(t_rot, original_quat))
 
-            new_metadata = metadata.copy()
-            new_metadata["pos"] = transformed_pos
-            new_metadata["quat"] = transformed_quat
+                new_metadata = metadata.copy()
+                new_metadata["pos"] = transformed_pos
+                new_metadata["quat"] = transformed_quat
 
-            self.terrain_meshes_to_add.append((mesh.copy(), t_pos, t_rot, new_metadata))
+                self.terrain_meshes_to_add.append((mesh.copy(), t_pos, t_rot, new_metadata))
 
             # Transition
             self.trns_bone_positions = traversal_db.bone_positions[best_index].copy()
@@ -729,6 +761,35 @@ class MotionMatchingSystem:
             force_search = True
 
         return query, force_search
+
+    def _place_kick_ball(
+        self,
+        traversal_db: MotionMatchingDatabase,
+        kick_ranges: list,
+        best_index: int,
+        t_pos: np.ndarray,
+        t_rot: np.ndarray,
+    ) -> None:
+        """Record the world ball position for the kick range that was matched."""
+        matched = next((r for r in kick_ranges if r.contains(best_index)), None)
+        if matched is None:
+            raise RuntimeError(f"kick transition matched frame {best_index} outside every kick range")
+        ball_db = np.asarray(matched.ball_pos, dtype=np.float32)
+        ball_world = (t_pos + math.quat_mul_vec3(t_rot, ball_db)).astype(np.float32)
+        # Flat ground: the ball rests on it whatever the root height offset is.
+        ball_world[2] = self.curr_ground_height + float(getattr(traversal_db, "ball_radius", ball_db[2]))
+        self.kick_events.append(
+            {
+                "skill": self.motion_state,
+                "kick_foot": matched.kick_foot,
+                "kind": matched.kind,
+                "entry_frame": int(best_index),
+                "contact_db_frame": int(matched.contact_frame),
+                "ball_pos_w": ball_world,
+                "clip": matched.clip,
+                "mirrored": matched.mirrored,
+            }
+        )
 
     def _stop_settled(self) -> bool:
         """Is the robot idle and actually standing on both feet?
@@ -1174,19 +1235,45 @@ class MotionMatchingSystem:
             self.last_ground_path_position = None
 
 
+def _vel_cmd_row(vel_cmd_idx: Optional[int], command: Optional[Any]) -> np.ndarray:
+    """One frame of ``vel_cmd``: continuous ``[v, omega]`` if ``command`` is set, else the one-hot."""
+    if command is not None:
+        return np.asarray(command, dtype=np.float64).reshape(2)
+    vel_cmd = np.zeros(VEL_CMD_DIM)
+    vel_cmd[vel_cmd_idx] = 1.0
+    return vel_cmd
+
+
+def _log_frame(sys: "MotionMatchingSystem", global_positions: np.ndarray, global_rotations: np.ndarray) -> None:
+    """Soccer bookkeeping per captured frame; does not touch the motion."""
+    sys.frame_log.append(
+        (
+            sys.motion_state,
+            int(sys.traversal_curr_frame),
+            global_positions[[sys.bone_left_foot, sys.bone_right_foot]].astype(np.float32),
+            global_rotations[1].astype(np.float32),
+        )
+    )
+
+
 def generate_segment(
     sys: "MotionMatchingSystem",
     speed: float,
     turn_angle_degrees: float,
     duration_s: float,
-    vel_cmd_idx: int,
+    vel_cmd_idx: Optional[int],
     dt: float = 1.0 / 60.0,
     force_search_first_frame: bool = False,
+    command: Optional[Any] = None,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Drive locomotion for ``duration_s``.
+
+    ``vel_cmd`` per frame is the one-hot of ``vel_cmd_idx`` (parkour) or, when
+    ``command`` is given, the continuous ``(v, omega)`` pair (soccer).
+    """
     num_steps = int(duration_s / dt)
     qpos_list = []
     vel_cmd_list = []
-    vel_cmd_dim = VEL_CMD_DIM
 
     turn_rate_rad_s = np.deg2rad(turn_angle_degrees) / duration_s
 
@@ -1223,10 +1310,9 @@ def generate_segment(
 
         qpos = np.concatenate([global_rotations[1], global_positions[1], dof], dtype=np.float32)
         qpos_list.append(qpos)
+        _log_frame(sys, global_positions, global_rotations)
 
-        vel_cmd = np.zeros(vel_cmd_dim)
-        vel_cmd[vel_cmd_idx] = 1.0
-        vel_cmd_list.append(vel_cmd)
+        vel_cmd_list.append(_vel_cmd_row(vel_cmd_idx, command))
 
     return np.array(qpos_list), np.array(vel_cmd_list)
 
@@ -1234,14 +1320,16 @@ def generate_segment(
 def generate_skill_sequence(
     sys: "MotionMatchingSystem",
     skill_name: str,
-    vel_cmd_idx: int,
+    vel_cmd_idx: Optional[int],
     dt: float = 1.0 / 60.0,
     speed: float = 1.0,
     angle: float = 0.0,
+    command: Optional[Any] = None,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Play ``skill_name`` to its end. ``command`` as in :func:`generate_segment`
+    (soccer kicks hold ``(v_before, 0)``)."""
     qpos_list = []
     vel_cmd_list = []
-    vel_cmd_dim = VEL_CMD_DIM
 
     # Keep "walking straight at the commanded heading" active for the whole
     # skill, so velocity does not decay and the hand-off back to locomotion is
@@ -1288,10 +1376,9 @@ def generate_skill_sequence(
 
         qpos = np.concatenate([global_rotations[1], global_positions[1], dof], dtype=np.float32)
         qpos_list.append(qpos)
+        _log_frame(sys, global_positions, global_rotations)
 
-        vel_cmd = np.zeros(vel_cmd_dim)
-        vel_cmd[vel_cmd_idx] = 1.0
-        vel_cmd_list.append(vel_cmd)
+        vel_cmd_list.append(_vel_cmd_row(vel_cmd_idx, command))
 
     capture_frame(bone_positions, bone_rotations)
 
@@ -1367,6 +1454,8 @@ def process_scenario(scenario: dict[str, Any], folder: str, force: bool, speed_u
 
     all_qpos = []
     all_vel_cmd = []
+    # Soccer: per-step kick_enable, expanded to frames below.
+    step_kick_enable = []
 
     for step in scenario["steps"]:
         step_type = step["type"]
@@ -1375,7 +1464,7 @@ def process_scenario(scenario: dict[str, Any], folder: str, force: bool, speed_u
             speed = step["speed"]
             angle = step["angle"]
             duration = step["duration"]
-            vel_cmd_idx = step["vel_cmd_idx"]
+            vel_cmd_idx = step.get("vel_cmd_idx")
             force_search = step.get("force_search", False)
 
             # print(f"  Generating segment: speed={speed}, angle={angle}, duration={duration}")
@@ -1386,22 +1475,30 @@ def process_scenario(scenario: dict[str, Any], folder: str, force: bool, speed_u
                 duration_s=duration,
                 vel_cmd_idx=vel_cmd_idx,
                 force_search_first_frame=force_search,
+                command=step.get("command"),
             )
             all_qpos.append(qpos)
             all_vel_cmd.append(vel)
+            step_kick_enable.append(np.full(len(qpos), float(step.get("kick_enable", 0.0))))
 
         elif step_type == "skill":
             skill_name = step["skill_name"]  # e.g. "step"
-            vel_cmd_idx = step["vel_cmd_idx"]
+            vel_cmd_idx = step.get("vel_cmd_idx")
             speed = step.get("speed", 1.0)  # Default to 1.0 if not specified
             angle = step.get("angle", 0.0)  # Default to 0.0 if not specified
 
             # print(f"  Generating skill: {skill_name} with speed={speed}, angle={angle}")
             qpos, vel = generate_skill_sequence(
-                sys=sys, skill_name=skill_name, vel_cmd_idx=vel_cmd_idx, speed=speed, angle=angle
+                sys=sys,
+                skill_name=skill_name,
+                vel_cmd_idx=vel_cmd_idx,
+                speed=speed,
+                angle=angle,
+                command=step.get("command"),
             )
             all_qpos.append(qpos)
             all_vel_cmd.append(vel)
+            step_kick_enable.append(np.full(len(qpos), float(step.get("kick_enable", 0.0))))
 
     if not all_qpos:
         print(f"  No segments generated for {name}.")
@@ -1411,9 +1508,30 @@ def process_scenario(scenario: dict[str, Any], folder: str, force: bool, speed_u
     vel_cmd = np.concatenate(all_vel_cmd, axis=0)
 
     required_fps = 50
+    num_captured = len(qpos)
     qpos = adjust_data_speed(qpos, speed_up_ratio)
     vel_cmd = adjust_vel_cmd_speed(vel_cmd, speed_up_ratio)
     vel_cmd = resample_vel_cmd(vel_cmd, required_fps, original_fps=60)
+
+    soccer_cfg = scenario.get("soccer")
+    extra_fields = None
+    if soccer_cfg is not None:
+        from motion_matching.scenarios.soccer import build_soccer_fields
+
+        # Continuous commands are physical rates: slowing the clip down by
+        # speed_up_ratio slows (v, omega) by the same factor.
+        vel_cmd = vel_cmd * speed_up_ratio
+        extra_fields = build_soccer_fields(
+            soccer_cfg,
+            frame_log=sys.frame_log,
+            kick_events=sys.kick_events,
+            kick_enable=np.concatenate(step_kick_enable),
+            qpos_out=qpos,
+            num_captured=num_captured,
+            num_out=int(required_fps / 60 * len(qpos)),
+            speed_up_ratio=speed_up_ratio,
+            required_fps=required_fps,
+        )
 
     # Some locomotion scenarios request nearby clutter after their final root
     # trajectory is known. This terrain is deliberately post-processed: it must
@@ -1446,7 +1564,15 @@ def process_scenario(scenario: dict[str, Any], folder: str, force: bool, speed_u
         sys.terrain_meshes_to_add.extend(offpath_obstacles)
         print(f"Added {len(offpath_obstacles)} off-path box obstacles")
 
-    save_motion_npz(qpos, output_file, target_fps=required_fps, source_fps=60, vel_cmd=vel_cmd)
+    save_motion_npz(
+        qpos,
+        output_file,
+        target_fps=required_fps,
+        source_fps=60,
+        vel_cmd=vel_cmd,
+        extra_fields=extra_fields,
+        robot=sys.robot.name,
+    )
     print(f"Saved to {output_file}")
 
     # Save terrain

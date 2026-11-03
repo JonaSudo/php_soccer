@@ -29,6 +29,7 @@ def save_motion_npz(
     source_fps: int = 60,
     vel_cmd: Optional[np.ndarray] = None,
     robot: str = "g1",
+    extra_fields: Optional[dict[str, np.ndarray]] = None,
 ) -> dict[str, np.ndarray]:
     """Resample ``qpos`` to ``target_fps`` and save it as a FAR-tracking npz.
 
@@ -42,6 +43,9 @@ def save_motion_npz(
             resampled it to ``target_fps`` (it is stored verbatim as float32).
         robot: RobotSpec name; selects the FK model and layout
             (see :func:`qpos_to_tracking`).
+        extra_fields: Optional further arrays stored verbatim (soccer kick
+            fields, see :mod:`motion_matching.io.kick_io`). Per-frame entries
+            must already be at ``target_fps``.
 
     Returns:
         The tracking dict that was written (handy for tests / further use).
@@ -50,6 +54,13 @@ def save_motion_npz(
     tracking = qpos_to_tracking(qpos, target_fps, robot=robot)
     if vel_cmd is not None:
         tracking["vel_cmd"] = vel_cmd.astype(np.float32)
+    if extra_fields:
+        n = len(tracking["joint_pos"])
+        for key, value in extra_fields.items():
+            value = np.asarray(value)
+            if value.ndim >= 1 and len(value) != n and key not in ("kick_side", "scenario"):
+                raise ValueError(f"extra field {key!r} has {len(value)} frames, motion has {n}")
+            tracking[key] = value
     np.savez(output_file, **tracking)
     return tracking
 
