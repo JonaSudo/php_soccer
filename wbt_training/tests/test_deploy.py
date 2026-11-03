@@ -279,3 +279,15 @@ def test_kick_sim2sim_cli(tmp_path, capsys):
     assert K.main(["--onnx", str(onnx), "--stand-kick", "--approach", "0.25", "--seconds", "1.0", "--out", str(out)]) == 0
     rec = json.loads(out.read_text())
     assert rec["steps"] == 50 and "latency" in rec
+
+
+@needs_model
+def test_kick_sim2sim_passes_phase6_command(tmp_path):
+    pytest.importorskip("onnxruntime")
+    from wbt_training.sim2sim import lupus_kick_sim2sim as K
+
+    sim = K.LupusKickSim2Sim(make_student_onnx(tmp_path / "p.onnx"))
+    sc = K.KickScenario(approach=1.0, v=0.0, kick_enable=False, seconds=0.2, head_scan=False, kick_dir=0.3, mode=2)
+    sim.run(sc)
+    assert sim.cmd.kick_dir == pytest.approx(0.3) and sim.cmd.mode == 2
+    assert K.main(["--onnx", str(tmp_path / "p.onnx"), "--dribble", "--kick-dir-deg", "20", "--seconds", "0.2"]) == 0

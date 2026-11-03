@@ -141,8 +141,15 @@ limits are known). Soccer motions carry these extra fields, checked by
 `validate_kick_npz` in [kick_io.py](motion_matching/io/kick_io.py):
 `object_pos_w`, `object_quat_w`, `object_lin_vel_w`, `kick_enable`,
 `kick_phase` (0 walk/stand, 1 commit, 2 after contact), `contact_frame`,
-`kick_dir` and `kick_mode` (Phase 6 placeholders), plus `kick_side` and
-`scenario`. The ball radius comes from `robots/ball/ball.yaml`.
+`kick_dir` (rad, relative to the heading) and `kick_mode` (0 ignore, 1 kick,
+2 dribble), plus `kick_side` and `scenario`. The ball radius comes from
+`robots/ball/ball.yaml`.
+
+Phase 6 scenarios (`PHASE6_SCENARIOS`, not in the default set):
+`walk_kick_dir` / `stand_kick_dir` (as `walk_kick` / `stand_kick` with a random
+`kick_dir` in +-30 deg per motion) and `walk_dribble` (slow walk with the ball
+on the path in front of the robot, `kick_mode` 2). See
+[wbt_training/PHASE6.md](../wbt_training/PHASE6.md).
 
 Kick skills (`kick_right`, `kick_left`, `kick_stand_right`, `kick_stand_left`)
 take their search ranges from a sidecar next to the database, built from

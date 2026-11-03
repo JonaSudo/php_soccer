@@ -307,7 +307,7 @@ lupus_kick_distill_finetune = build_lupus_kick_distill(lupus_kick_teacher)
 lupus_kick_distill = build_lupus_kick_distill(lupus_kick_teacher, pure=True)
 
 # LUPUS Phase 6: kick direction (kick_dir input + reward) and dribble mode
-# (3 modes, dribble rewards). Finetune from the Phase-3/4 checkpoints.
+# (3 modes, dribble rewards). The inputs grow, so they train from scratch.
 lupus_kickdir_teacher = build_phase6_teacher(lupus_kick_teacher, dribble=False)
 lupus_dribble_teacher = build_phase6_teacher(lupus_kick_teacher, dribble=True)
 lupus_kickdir_distill_finetune = build_phase6_distill(lupus_kick_distill_finetune, dribble=False)
