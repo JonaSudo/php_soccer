@@ -1,0 +1,98 @@
+# Clip catalog for Phase 1. One entry per source clip (or glob of clips).
+#
+#   path      relative to the data root of `source` (--root <source>=<dir>);
+#             globs allowed, each match becomes "<id>_<file stem>"
+#   group     walk | walk_kick | stand_kick
+#   trim      [start_s, stop_s] in seconds of the source clip (null = all)
+#   speed     playback factor or "auto" (fastest of `speeds` that passes the
+#             feasibility check; plan: 0.6x - 0.8x for kicks)
+#   mirror    also export the left/right mirrored clip
+#   annotation  hand corrections in seconds of the trimmed source clip
+#             (contact_frame, skill_start, skill_end, entry_start) or values
+#             (kick_foot: left|right, group, synthetic_ball: true)
+#   status    todo (not reviewed) | ok | reject; only for bookkeeping
+#
+# Quantities from the plan: 5-10 min walking with curves and tempo changes,
+# 10-30 kicks from a run-up, ~10 kicks from standing. Clip ranges marked
+# "todo" still need a look at the data (sichten, step 1) and are first runs.
+
+sources:
+  lafan:        # github.com/ubisoft/ubisoft-laforge-animation-dataset, lafan1.zip (CC BY-NC-ND 4.0: internal use only)
+    kind: bvh
+  omnicontact:  # huggingface.co/datasets/lightcone02/OmniContact-Dataset (CC BY-NC 4.0, accept terms)
+    kind: omnicontact
+  amass:        # amass.is.tue.mpg.de (SMPL-X N), then holosoma data_utils/prep_amass_smplx_for_rt.py
+    kind: amass
+
+defaults:
+  walk:       {speed: 1.0, mirror: true, speeds: [1.0, 0.9, 0.8]}
+  walk_kick:  {speed: auto, mirror: true, speeds: [0.8, 0.75, 0.7, 0.65, 0.6]}
+  stand_kick: {speed: auto, mirror: true, speeds: [0.8, 0.75, 0.7, 0.65, 0.6]}
+
+clips:
+  # ---- walking (LAFAN1; ~4 min per file at 30 fps) ---------------------------
+  - id: lafan_walk1_s1
+    source: lafan
+    path: walk1_subject1.bvh
+    group: walk
+    trim: [0, 120]
+    status: todo
+    notes: walking with curves; pick segments without stops longer than 3 s
+  - id: lafan_walk3_s2
+    source: lafan
+    path: walk3_subject2.bvh
+    group: walk
+    trim: [0, 120]
+    status: todo
+    notes: different tempi
+  - id: lafan_run1_s2
+    source: lafan
+    path: run1_subject2.bvh
+    group: walk
+    trim: [0, 60]
+    speed: auto
+    status: todo
+    notes: fast end of the speed range; likely needs slowing down
+  - id: lafan_walk2_s1
+    source: lafan
+    path: walk2_subject1.bvh
+    group: walk
+    trim: [0, 90]
+    status: todo
+    notes: turns on the spot
+
+  # ---- AMASS walking with curves (CMU, ACCAD) ---------------------------------
+  - id: amass_cmu_walk_curve
+    source: amass
+    path: CMU/69/69_*_stageii.npz      # subject 69: walking, turning
+    group: walk
+    status: todo
+  - id: amass_accad_walk
+    source: amass
+    path: ACCAD/Male2Walking_c3d/*_stageii.npz
+    group: walk
+    status: todo
+
+  # ---- kicks from the run-up, with ball (OmniContact soccer) ------------------
+  - id: oc_kick_forward
+    source: omnicontact
+    path: raw_mocap/soccer/case1_kick_forward/*/motion_actor.bvh
+    npz_dir: npz/soccer/case1_kick_forward   # processed npz with object_pos_w
+    group: walk_kick
+    status: todo
+    notes: 30 trajectories; keep the ones with >= 2 run-up steps (annotate decides, reject otherwise)
+
+  # ---- kicks from standing (CMU via AMASS, no ball pose -> synthetic ball) ----
+  - id: amass_cmu10_kick
+    source: amass
+    path: CMU/10/10_0[1-6]_stageii.npz   # subject 10: "kick soccer ball"
+    group: stand_kick
+    annotation: {synthetic_ball: true}
+    status: todo
+  - id: amass_cmu74_kick
+    source: amass
+    path: CMU/74/74_*_stageii.npz        # subject 74: kicks and walking
+    group: stand_kick
+    annotation: {synthetic_ball: true}
+    status: todo
+    notes: mixes kicks and walking; clips that are not quiet before the kick end up in reject

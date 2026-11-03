@@ -345,8 +345,17 @@ def _canon(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
-def map_bvh_names(names: list[str], extra_aliases: dict[str, str] | None = None) -> dict[str, int]:
-    """LAFAN name -> BVH joint index, using :data:`BVH_ALIASES` (+ exact overrides)."""
+def map_bvh_names(
+    names: list[str], parents: np.ndarray | None = None, extra_aliases: dict[str, str] | None = None
+) -> dict[str, int]:
+    """LAFAN name -> BVH joint index.
+
+    End joints (hips, head, hands, feet, toes) are matched by name with
+    :data:`BVH_ALIASES`. Elbow/shoulder and knee/hip are then taken from the
+    skeleton structure (parent of the hand is the elbow, and so on), because
+    exporters disagree on what "Shoulder" means (Xsens: upper arm, LAFAN:
+    clavicle). ``extra_aliases`` (LAFAN name -> BVH name) override everything.
+    """
     canon = {_canon(n): i for i, n in enumerate(names)}
     out: dict[str, int] = {}
     for target, aliases in BVH_ALIASES.items():
@@ -354,6 +363,24 @@ def map_bvh_names(names: list[str], extra_aliases: dict[str, str] | None = None)
             if a in canon:
                 out[target] = canon[a]
                 break
+    if parents is not None:
+        for side in ("Left", "Right"):
+            hand, foot = out.get(f"{side}Hand"), out.get(f"{side}Foot")
+            if hand is not None and parents[hand] >= 0:
+                out[f"{side}ForeArm"] = int(parents[hand])
+                if parents[parents[hand]] >= 0:
+                    out[f"{side}Arm"] = int(parents[parents[hand]])
+            if foot is not None and parents[foot] >= 0:
+                out[f"{side}Leg"] = int(parents[foot])
+                if parents[parents[foot]] >= 0:
+                    out[f"{side}UpLeg"] = int(parents[parents[foot]])
+            if f"{side}ToeBase" not in out and foot is not None:
+                kids = [i for i, p in enumerate(parents) if p == foot]
+                if len(kids) == 1:
+                    out[f"{side}ToeBase"] = kids[0]
+        for side in ("Left", "Right"):  # a clavicle alias must not alias the upper arm
+            if out.get(f"{side}Shoulder") is not None and out.get(f"{side}Shoulder") == out.get(f"{side}Arm"):
+                del out[f"{side}Shoulder"]
     for target, src in (extra_aliases or {}).items():
         out[target] = names.index(src)
     return out
@@ -382,7 +409,7 @@ def from_bvh(
     path = Path(path)
     bvh = parse_bvh(path.read_text())
     pos = bvh_global_positions(bvh)
-    idx = map_bvh_names(bvh.names, aliases)
+    idx = map_bvh_names(bvh.names, bvh.parents, aliases)
     missing = [n for n in REQUIRED_LAFAN if n not in idx]
     if missing:
         raise ValueError(

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
-from scipy.interpolate import CubicSpline
+from scipy.interpolate import PchipInterpolator
 from scipy.spatial.transform import Rotation, Slerp
 
 from reference_data.lupus_kin import kinematics, mirror_rules
@@ -101,7 +101,8 @@ class LupusClip:
     def time_scale(self, factor: float, fps: float | None = None) -> LupusClip:
         """Play the clip at ``factor`` x speed (0.7 = 30 % slower, longer clip).
 
-        Joints and root position use a cubic spline, the root orientation
+        Joints and root position use a monotone cubic (PCHIP, no overshoot past
+        joint stops the clip touches), the root orientation
         slerp; the output is sampled at ``fps`` (default: unchanged).
         """
         if factor <= 0:
@@ -110,7 +111,7 @@ class LupusClip:
         t_src = np.arange(self.num_frames) / self.fps / factor  # new time of each source frame
         n = int(np.floor(t_src[-1] * fps + 1e-9)) + 1
         t_dst = np.arange(n) / fps
-        lin = CubicSpline(t_src, np.concatenate([self.root_pos, self.dofs], axis=1), axis=0)(t_dst)
+        lin = PchipInterpolator(t_src, np.concatenate([self.root_pos, self.dofs], axis=1), axis=0)(t_dst)
         quats = _unroll(self.root_quat)
         rot = Rotation.from_quat(quats[:, [1, 2, 3, 0]])
         q = Slerp(t_src, rot)(t_dst).as_quat()[:, [3, 0, 1, 2]]
