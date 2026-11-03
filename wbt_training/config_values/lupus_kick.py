@@ -15,6 +15,8 @@ export):
 * ``kick_enable`` (T,) in {0, 1}
 * ``kick_phase`` (T,) in {0, 1, 2}: walk/stand, run-up/commit, after contact
 * ``contact_frame`` (T,) bool: True exactly at the contact frame
+* ``body_names``: LUPUS bodies as in ``lupus.xml``; the foot contact points
+  may be left out (they are aliased to ``*_foot_link``)
 
 Motions without these fields still load (no kick: ``kick_enable`` = 0,
 ``kick_phase`` = 0), so walk-only data can be used for smoke runs.
@@ -198,6 +200,14 @@ def load_kick_fields(files: list[str], total_frames: int) -> dict[str, np.ndarra
     return out
 
 
+# Robot body -> body name in the motion data. The foot contact points are
+# fixed 1 g bodies for foot-height terms and are not in retargeted motions.
+LUPUS_BODY_NAME_ALIASES = {
+    "left_foot_contact_point": "left_foot_link",
+    "right_foot_contact_point": "right_foot_link",
+}
+
+
 class LupusKickMotionCommand(PhpMotionCommand):
     """``PhpMotionCommand`` plus kick fields, ball parking and the heading at contact.
 
@@ -218,7 +228,18 @@ class LupusKickMotionCommand(PhpMotionCommand):
         self.contact_heading = torch.full((env.num_envs,), float("nan"), device=env.device)
 
     def setup(self) -> None:
-        super().setup()
+        # Holosoma maps the fake foot contact bodies to G1's ``*_ankle_roll_link``
+        # when indexing motion data (module-level FAKE_BODY_NAME_ALIASES). LUPUS
+        # motions carry ``*_foot_link`` instead, so swap the aliases during setup.
+        import holosoma.managers.command.terms.wbt as wbt_cmd
+
+        aliases = dict((self.cfg.params or {}).get("body_name_aliases", LUPUS_BODY_NAME_ALIASES))
+        saved = wbt_cmd.FAKE_BODY_NAME_ALIASES
+        wbt_cmd.FAKE_BODY_NAME_ALIASES = {**saved, **aliases}
+        try:
+            super().setup()
+        finally:
+            wbt_cmd.FAKE_BODY_NAME_ALIASES = saved
         fields = load_kick_fields(self._motion_files_for(self.motion), int(self.motion.time_step_total))
         self._kick = {
             k: torch.as_tensor(v, device=self.device)
