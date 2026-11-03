@@ -172,3 +172,38 @@ def test_cli_runs_pd_hold(capsys):
     assert S.main(["--seconds", "0.5"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["steps"] == 25 and out["fell"] is False
+
+
+@needs_model
+def test_cpu_training_export_runs_in_sim2sim(tmp_path):
+    """Phase 0 pipeline on CPU: train exp:lupus-loco (MuJoCo, 1 env) -> ONNX -> Sim2Sim."""
+    import subprocess
+    import sys
+
+    pytest.importorskip("onnxruntime")
+    repo = Path(__file__).resolve().parents[2]
+    cmd = [
+        sys.executable,
+        str(repo / "wbt_training" / "train_agent.py"),
+        "exp:lupus-loco",
+        "simulator:mujoco",
+        "terrain:terrain-locomotion-plane",
+        "--training.num-envs", "1",
+        "--training.headless", "True",
+        "--algo.config.num-learning-iterations", "1",
+        "--algo.config.num-steps-per-env", "8",
+        "--algo.config.save-interval", "1",
+        "--logger.type", "disabled",
+    ]  # fmt: skip
+    proc = subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True, timeout=600)
+    assert proc.returncode == 0, proc.stderr[-3000:]
+    onnx_files = sorted(tmp_path.glob("logs/**/model_*.onnx"))
+    assert onnx_files, proc.stdout[-3000:]
+
+    policy, meta = S.load_onnx_policy(onnx_files[-1])
+    sim = S.LupusSim2Sim()
+    sim.configure(S.apply_onnx_metadata(sim.cfg, meta, sim.dof_names))
+    assert policy(sim.reset()).shape == (22,)
+    res = S.rollout(sim, policy, (0.5, 0.0, 0.0), seconds=0.5, stop_on_fall=False)
+    assert res.steps == 25
+    assert np.isfinite([res.mean_vx, res.mean_wz, res.max_torque_ratio]).all()
