@@ -5,6 +5,10 @@ Reads the BeyondMimic layout emitted by motion matching and preserves input
 body poses without MuJoCo forward kinematics. Inserts the two
 foot_contact_point bodies as welded duplicates of their ankle_roll parents,
 reorders joint DOFs Isaac→MuJoCo, and writes the holosoma format.
+
+Inputs that already carry ``joint_names`` / ``body_names`` (non-G1 robots such
+as LUPUS, written by ``qpos_to_tracking(..., robot=...)`` in MJCF order with the
+contact-point bodies included) are passed through; only the root DOFs are added.
 """
 
 import argparse
@@ -58,21 +62,30 @@ def convert(in_path: str, out_path: str) -> bool:
     if T < 2:
         return False
 
+    if "joint_names" in d.files and "body_names" in d.files:
+        return _write(out_path, d, fps_val, bm_pos, bm_quat, bm_lvel, bm_avel,
+                      joint_pos_isaac, joint_vel_isaac, d["joint_names"], d["body_names"])
+
     # Pass-through reordering: 30 → 32 bodies with foot_contact_points welded
     body_pos_w = bm_pos[:, OUT32_TO_BM30, :]
     body_quat_w = bm_quat[:, OUT32_TO_BM30, :]
     body_lin_vel_w = bm_lvel[:, OUT32_TO_BM30, :]
     body_ang_vel_w = bm_avel[:, OUT32_TO_BM30, :]
 
-    # Root DOFs directly from pelvis (BM body 0 = holosoma body 0)
+    # Joint DOFs: Isaac → MuJoCo permutation
+    return _write(out_path, d, fps_val, body_pos_w, body_quat_w, body_lin_vel_w, body_ang_vel_w,
+                  joint_pos_isaac[:, ISAAC_TO_MUJOCO], joint_vel_isaac[:, ISAAC_TO_MUJOCO],
+                  np.array(G1_JOINT_NAMES_MUJOCO), np.array(G1_BODY_NAMES))
+
+
+def _write(out_path, d, fps_val, body_pos_w, body_quat_w, body_lin_vel_w, body_ang_vel_w,
+           joint_pos_mj, joint_vel_mj, joint_names, body_names) -> bool:
+    # Root DOFs directly from the base body (index 0 in both layouts)
+    bm_pos, bm_quat, bm_lvel, bm_avel = body_pos_w, body_quat_w, body_lin_vel_w, body_ang_vel_w
     root_pos = bm_pos[:, 0, :]       # [T, 3]
     root_quat = bm_quat[:, 0, :]     # [T, 4] wxyz
     root_lvel = bm_lvel[:, 0, :]
     root_avel = bm_avel[:, 0, :]
-
-    # Joint DOFs: Isaac → MuJoCo permutation
-    joint_pos_mj = joint_pos_isaac[:, ISAAC_TO_MUJOCO]
-    joint_vel_mj = joint_vel_isaac[:, ISAAC_TO_MUJOCO]
 
     joint_pos_h = np.concatenate([root_pos, root_quat, joint_pos_mj], axis=1)  # [T, 36]
     joint_vel_h = np.concatenate([root_lvel, root_avel, joint_vel_mj], axis=1) # [T, 35]
@@ -85,8 +98,8 @@ def convert(in_path: str, out_path: str) -> bool:
         "body_quat_w": body_quat_w,
         "body_lin_vel_w": body_lin_vel_w,
         "body_ang_vel_w": body_ang_vel_w,
-        "joint_names": np.array(G1_JOINT_NAMES_MUJOCO),
-        "body_names": np.array(G1_BODY_NAMES),
+        "joint_names": np.asarray(joint_names),
+        "body_names": np.asarray(body_names),
     }
     for passthrough in ("vel_cmd", "motion_ends", "motion_idxs"):
         if passthrough in d.files:
