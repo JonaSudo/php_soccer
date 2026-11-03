@@ -1,4 +1,4 @@
-"""Export PHP depth-student ONNX bundles and Holosoma inference metadata.
+"""Export PHP depth-student ONNX bundles, the LUPUS ball student and inference metadata.
 
 The bundle contains a depth CNN and a student MLP. The student retains the
 ``obs`` / ``time_step`` inputs, actions, and six motion-reference outputs.
@@ -377,3 +377,151 @@ def build_metadata_from_wbt_env(env, run_path: str = "") -> dict[str, Any]:
         pass
 
     return metadata
+
+
+# ---------------------------------------------------------------------------
+# Ball-student exporter (LUPUS kick policy): one ONNX, no backbone
+# ---------------------------------------------------------------------------
+
+
+def observation_layout(env, group: str = "actor_obs") -> list[dict[str, Any]]:
+    """Column layout of a concatenated observation group, as the policy sees it.
+
+    The observation manager concatenates terms in sorted-name order and, with
+    ``history_length > 1``, each term's ``history_length`` frames back to back,
+    oldest first (zero-padded after a reset). Returns one entry per term with
+    ``name``, ``dim`` (per frame), ``history``, ``start`` and ``stop`` columns, so
+    the deploy side can rebuild the exact vector
+    (``wbt_training/deploy/obs_builder.py``).
+    """
+    manager = env.observation_manager
+    group_cfg = manager.cfg.groups[group]
+    history = max(1, int(group_cfg.history_length))
+    layout: list[dict[str, Any]] = []
+    start = 0
+    for name in sorted(group_cfg.terms):
+        obs = manager._compute_term(group, name, group_cfg.terms[name], modify_history=False)
+        dim = int(obs.shape[1])
+        stop = start + dim * history
+        layout.append({"name": name, "dim": dim, "history": history, "start": start, "stop": stop})
+        start = stop
+    return layout
+
+
+def layout_to_metadata(layout: list[dict[str, Any]]) -> str:
+    """Compact ``name:dim:history;...`` string for ONNX metadata."""
+    return ";".join(f"{e['name']}:{e['dim']}:{e['history']}" for e in layout)
+
+
+def layout_from_metadata(text: str) -> list[dict[str, Any]]:
+    """Inverse of :func:`layout_to_metadata`."""
+    layout: list[dict[str, Any]] = []
+    start = 0
+    for item in filter(None, text.split(";")):
+        name, dim, hist = item.split(":")
+        stop = start + int(dim) * int(hist)
+        layout.append({"name": name, "dim": int(dim), "history": int(hist), "start": start, "stop": stop})
+        start = stop
+    return layout
+
+
+class _OnnxBallStudent(torch.nn.Module):
+    """Student MLP as deployed: ``obs`` (actor_obs incl. history) -> ``actions``."""
+
+    def __init__(self, student: torch.nn.Module, normalizer=None):
+        super().__init__()
+        self.student = copy.deepcopy(student).cpu().eval()
+        self.normalizer = copy.deepcopy(normalizer).cpu() if normalizer is not None else torch.nn.Identity()
+
+    @property
+    def in_features(self) -> int:
+        first = next(m for m in self.student.modules() if isinstance(m, torch.nn.Linear))
+        return first.in_features
+
+    def forward(self, obs):
+        return self.student(self.normalizer(obs))
+
+
+def _ball_student_metadata(env) -> dict[str, Any]:
+    """Metadata the LUPUS deploy runner needs beyond the WBT defaults."""
+    meta: dict[str, Any] = {}
+    try:
+        layout = observation_layout(env, "actor_obs")
+        meta["obs_layout"] = layout_to_metadata(layout)
+        meta["obs_dim"] = layout[-1]["stop"] if layout else 0
+        meta["observation_names"] = [e["name"] for e in layout]
+    except (AttributeError, KeyError):
+        pass
+    try:
+        terms = env.observation_manager.cfg.groups["actor_obs"].terms
+        if "ball_detection" in terms:
+            import json
+
+            meta["ball_vision_cfg"] = json.dumps(terms["ball_detection"].params, sort_keys=True)
+        if "command" in terms:
+            import json
+
+            meta["command_obs_cfg"] = json.dumps(terms["command"].params, sort_keys=True)
+    except (AttributeError, KeyError):
+        pass
+    try:
+        params = env.action_manager.cfg.terms["joint_control"].params or {}
+        if "passive_dof_names" in params:
+            meta["passive_dof_names"] = list(params["passive_dof_names"])
+    except (AttributeError, KeyError, TypeError):
+        pass
+    dt = getattr(env, "dt", None)
+    if dt is not None:
+        meta["policy_dt"] = float(dt)
+    meta["policy_format"] = "lupus_ball_student_v1"
+    return meta
+
+
+def export_ball_student_onnx(
+    env,
+    policy,
+    path: str,
+    *,
+    filename: str = "policy.onnx",
+    normalizer=None,
+    run_path: str = "",
+    verbose: bool = False,
+) -> str:
+    """Export the ball student as a single ONNX with deploy metadata."""
+    os.makedirs(path, exist_ok=True)
+    module = _OnnxBallStudent(policy.student, normalizer)
+    out = os.path.join(path, filename)
+    torch.onnx.export(
+        module,
+        (torch.zeros(1, module.in_features),),
+        out,
+        export_params=True,
+        opset_version=13,
+        dynamo=False,
+        verbose=verbose,
+        input_names=["obs"],
+        output_names=["actions"],
+        dynamic_axes={},
+    )
+    metadata = build_metadata_from_wbt_env(env, run_path=run_path)
+    metadata.update(_ball_student_metadata(env))
+    attach_onnx_metadata(out, metadata)
+    return out
+
+
+def export_ball_student_bundle(algo, iteration: int) -> str | None:
+    """Training-save hook for :class:`BallDistillationPPO`: ``model_<iter>/policy.onnx``."""
+    if not getattr(algo, "is_main_process", True):
+        return None
+    try:
+        import wandb
+    except ImportError:
+        wandb = None
+    run_path = ""
+    if wandb is not None and wandb.run is not None:
+        run_path = wandb.run.path or ""
+    output_dir = os.path.join(algo.log_dir, f"model_{iteration:05d}")
+    out = export_ball_student_onnx(algo.env, algo.policy, output_dir, run_path=run_path)
+    if wandb is not None and wandb.run is not None:
+        wandb.save(out, base_path=algo.log_dir)
+    return output_dir

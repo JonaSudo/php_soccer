@@ -13,8 +13,9 @@ Usage::
 
 ``--checkpoint`` is an alias for ``--training.checkpoint``. Legacy ``exp:...``
 labels are accepted, but the saved config always defines the starting model.
-Export logic is shared with the training save hook through
-``wbt_training.utils.exporter.export_depth_student_bundle``.
+Export logic is shared with the training save hook through the algorithm's
+``export_student_bundle`` (``export_depth_student_bundle`` for PHP depth
+students, ``export_ball_student_bundle`` for the LUPUS ball student).
 """
 
 from __future__ import annotations
@@ -163,7 +164,13 @@ def _export(
         # iteration, schedule and environment-state restoration in the core loader.
         algo.load(str(ckpt_path))
         iteration = int(getattr(algo, "current_learning_iteration", 0))
-        output_dir = export_depth_student_bundle(algo, iteration)
+        # PHP depth students export a backbone + student pair; the LUPUS ball
+        # student (BallDistillationPPO) a single policy.onnx.
+        exporter = getattr(algo, "export_student_bundle", None)
+        if exporter is not None:
+            output_dir = exporter(iteration)
+        else:
+            output_dir = export_depth_student_bundle(algo, iteration)
         print(f"Exported ONNX bundle to: {output_dir}", flush=True)
         return output_dir
     finally:

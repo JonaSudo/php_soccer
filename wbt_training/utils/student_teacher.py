@@ -121,16 +121,20 @@ def _bind_routing_column(module_cls: type, env) -> Callable[..., object]:
 class _ExportOnSaveMixin:
     """Export the deployable student bundle after a core checkpoint save."""
 
+    def export_student_bundle(self, iteration: int) -> str | None:
+        """Write the deployable student for ``iteration``; returns its directory."""
+        from wbt_training.utils.exporter import export_depth_student_bundle
+
+        return export_depth_student_bundle(self, iteration)
+
     def save(self, path: str | None = None, name: str = "last.ckpt") -> None:
         super().save(path=path, name=name)
 
-        from wbt_training.utils.exporter import export_depth_student_bundle
-
         try:
-            export_depth_student_bundle(self, self.current_learning_iteration)
+            self.export_student_bundle(self.current_learning_iteration)
         except Exception as error:
             print(
-                f"[WARN] Failed to export depth student ONNX at iter "
+                f"[WARN] Failed to export student ONNX at iter "
                 f"{self.current_learning_iteration}: {error}",
                 file=sys.stderr,
             )
@@ -235,6 +239,51 @@ class PhpDistillationPPO(_ExportOnSaveMixin, DistillationPPO):
         if gate is None:
             return super()._get_ppo_gate()
         return gate.view(-1, 1).to(self.device)
+
+
+class BallDistillationPPO(PhpDistillationPPO):
+    """PHP's DAgger + PPO for the LUPUS ball student: no depth, one ONNX.
+
+    The config's module must use
+    :class:`~wbt_training.config_values.ball_distillation.NoDepthBackbone`
+    (``depth_output_dim=0``), so the student MLP sees exactly ``actor_obs``.
+    Exports ``model_<iter>/policy.onnx`` (``obs`` -> ``actions``) with the
+    observation layout in its metadata; see
+    :func:`wbt_training.utils.exporter.export_ball_student_bundle`.
+    """
+
+    def _build_policy(self) -> None:
+        if int(self.config.module.depth_output_dim) != 0:
+            raise ValueError(
+                "BallDistillationPPO needs module.depth_output_dim=0 and the NoDepthBackbone"
+            )
+        super()._build_policy()
+
+    def export_student_bundle(self, iteration: int) -> str | None:
+        from wbt_training.utils.exporter import export_ball_student_bundle
+
+        return export_ball_student_bundle(self, iteration)
+
+    def export(self, onnx_file_path: str) -> None:
+        """Single-file export (overrides core's backbone + student pair)."""
+        from pathlib import Path
+
+        from wbt_training.utils.exporter import export_ball_student_onnx
+
+        path = Path(onnx_file_path)
+        export_ball_student_onnx(self.env, self.policy, str(path.parent), filename=path.name)
+
+
+class BallDistillation(PhpDistillation):
+    """Pure-DAgger variant of :class:`BallDistillationPPO` (no depth, one ONNX)."""
+
+    def _build_policy(self) -> None:
+        if int(self.config.module.depth_output_dim) != 0:
+            raise ValueError("BallDistillation needs module.depth_output_dim=0 and the NoDepthBackbone")
+        super()._build_policy()
+
+    export_student_bundle = BallDistillationPPO.export_student_bundle
+    export = BallDistillationPPO.export
 
 
 ROUTING_TERM = "which_motion"

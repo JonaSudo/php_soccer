@@ -27,6 +27,7 @@ from holosoma.config_values.wbt.g1.experiment import g1_29dof_wbt
 
 from wbt_training.config_values.lupus import lupus_loco
 from wbt_training.config_values.lupus_kick import build_lupus_kick_teacher
+from wbt_training.config_values.lupus_kick_distill import build_lupus_kick_distill
 from wbt_training.config_values.depth_distillation import (
     g1_29dof_wbt_terrain_distill_command,
     g1_29dof_wbt_terrain_distill_curriculum,
@@ -299,6 +300,11 @@ g1_wbt_terrain_warp_distill = replace(
 # ---------------------------------------------------------------------------
 lupus_kick_teacher = build_lupus_kick_teacher(g1_wbt_terrain_ref)
 
+# LUPUS Phase 4: student with noisy ball detection instead of depth (one ONNX).
+# _finetune = DAgger + PPO (main recipe), plain = pure DAgger.
+lupus_kick_distill_finetune = build_lupus_kick_distill(lupus_kick_teacher)
+lupus_kick_distill = build_lupus_kick_distill(lupus_kick_teacher, pure=True)
+
 
 DEFAULTS = {
     # Terrain preset for dense WBT with on-path obstacle injection
@@ -319,6 +325,9 @@ DEFAULTS = {
     "lupus_loco": lupus_loco,
     # LUPUS Phase 3: walk-kick teacher with ball, head scan and ball rewards.
     "lupus_kick_teacher": lupus_kick_teacher,
+    # LUPUS Phase 4: ball-detection student (pure DAgger / DAgger + PPO).
+    "lupus_kick_distill": lupus_kick_distill,
+    "lupus_kick_distill_finetune": lupus_kick_distill_finetune,
 }
 
 AnnotatedExperimentConfig = Annotated[
