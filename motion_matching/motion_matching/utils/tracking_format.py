@@ -14,12 +14,20 @@ Ported from ``tracking_utils/interaction_mesh_to_sim_data.py`` in the sibling
 ``motion_matching`` repo. Joint/body remapping constants are reproduced
 verbatim so the output stays bit-compatible with the existing conversion
 pipeline.
+
+That layout is G1's (29 joints, 30 bodies, IsaacLab order). Other robots
+(``robot="lupus"``) use their MJCF directly: joints and bodies in MJCF order
+(= the holosoma robot config order), every body except ``world``, and the
+file additionally carries ``joint_names`` / ``body_names`` so the holosoma
+converter can work by name.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import mujoco as mj
+
+from dataclasses import dataclass
 
 from motion_matching.utils import G1_MJCF
 
@@ -39,26 +47,63 @@ _EXCLUDED_BODIES = ("world", "left_toe_link", "right_toe_link")
 _EXPECTED_BODIES = 30
 _EXPECTED_JOINTS = 29
 
-_model: mj.MjModel | None = None
-_body_filter: np.ndarray | None = None
 
 
-def _get_model() -> tuple[mj.MjModel, np.ndarray]:
-    """Load the G1 MJCF once per process and cache it (and its body filter)."""
-    global _model, _body_filter
-    if _model is None:
-        _model = mj.MjModel.from_xml_path(G1_MJCF)
-        body_ids = [
-            i for i in range(_model.nbody)
-            if mj.mj_id2name(_model, mj.mjtObj.mjOBJ_BODY, i) not in _EXCLUDED_BODIES
-        ]
-        if len(body_ids) != _EXPECTED_BODIES:
-            raise RuntimeError(
-                f"G1 MJCF produced {len(body_ids)} bodies after filtering, "
-                f"expected {_EXPECTED_BODIES}"
-            )
-        _body_filter = np.array(body_ids, dtype=np.int64)
-    return _model, _body_filter
+@dataclass
+class _Layout:
+    """FK model plus the output ordering for one robot."""
+
+    model: mj.MjModel
+    body_filter: np.ndarray          # MuJoCo body ids written, before body_mapping
+    num_joints: int
+    qpos_to_mjcf: np.ndarray | None  # motion-matching DoF order -> MJCF qpos order
+    joint_mapping: np.ndarray | None
+    body_mapping: np.ndarray | None
+    joint_names: list[str] | None    # written to the npz when set
+    body_names: list[str] | None
+
+
+_layouts: dict[str, _Layout] = {}
+
+
+def _g1_layout() -> _Layout:
+    model = mj.MjModel.from_xml_path(G1_MJCF)
+    body_ids = [
+        i for i in range(model.nbody)
+        if mj.mj_id2name(model, mj.mjtObj.mjOBJ_BODY, i) not in _EXCLUDED_BODIES
+    ]
+    if len(body_ids) != _EXPECTED_BODIES:
+        raise RuntimeError(
+            f"G1 MJCF produced {len(body_ids)} bodies after filtering, "
+            f"expected {_EXPECTED_BODIES}"
+        )
+    return _Layout(model, np.array(body_ids, dtype=np.int64), _EXPECTED_JOINTS,
+                   None, _JOINT_MAPPING, _BODY_MAPPING, None, None)
+
+
+def _mjcf_layout(robot: str) -> _Layout:
+    from motion_matching.kinematics.robot_spec import get_robot_spec
+
+    spec = get_robot_spec(robot)
+    if spec.mjcf_path is None:
+        raise ValueError(f"robot {robot!r} has no MJCF for tracking export")
+    model = mj.MjModel.from_xml_path(str(spec.mjcf_path))
+    if model.jnt_type[0] != mj.mjtJoint.mjJNT_FREE:
+        raise ValueError(f"{spec.mjcf_path}: first joint must be the free root joint")
+    mj_joints = [model.joint(i).name for i in range(1, model.njnt)]
+    if sorted(mj_joints) != sorted(spec.joint_names):
+        raise ValueError(f"{spec.mjcf_path} joints {mj_joints} != RobotSpec joints {spec.joint_names}")
+    qpos_to_mjcf = np.array([spec.joint_names.index(n) for n in mj_joints], dtype=np.int64)
+    body_ids = np.arange(1, model.nbody, dtype=np.int64)
+    body_names = [model.body(int(i)).name for i in body_ids]
+    return _Layout(model, body_ids, len(mj_joints), qpos_to_mjcf, None, None, mj_joints, body_names)
+
+
+def _get_layout(robot: str = "g1") -> _Layout:
+    """Load (once per process) the FK model and ordering for ``robot``."""
+    if robot not in _layouts:
+        _layouts[robot] = _g1_layout() if robot == "g1" else _mjcf_layout(robot)
+    return _layouts[robot]
 
 
 def _angular_velocity(q1: np.ndarray, q2: np.ndarray, dt: float) -> np.ndarray:
@@ -79,28 +124,31 @@ def _angular_velocity(q1: np.ndarray, q2: np.ndarray, dt: float) -> np.ndarray:
     return (2.0 / dt) * dq[1:] / dq[0]
 
 
-def qpos_to_tracking(qpos: np.ndarray, fps: int) -> dict[str, np.ndarray]:
-    """Convert ``(N, 36)`` qpos to the FAR-tracking schema.
+def qpos_to_tracking(qpos: np.ndarray, fps: int, robot: str = "g1") -> dict[str, np.ndarray]:
+    """Convert ``(N, 7 + num_dofs)`` qpos to the FAR-tracking schema.
 
-    ``qpos`` layout is ``[root_quat_wxyz, root_pos, dof29]`` (the
-    motion-matching convention). MuJoCo uses ``[root_pos, root_quat_wxyz,
-    dof29]``, so the layout is swapped once before calling FK.
+    ``qpos`` layout is ``[root_quat_wxyz, root_pos, dofs]`` (the
+    motion-matching convention, DoFs in RobotSpec order). MuJoCo uses
+    ``[root_pos, root_quat_wxyz, dofs]``, so the layout is swapped once before
+    calling FK.
     """
+    layout = _get_layout(robot)
     qpos = np.asarray(qpos, dtype=np.float32)
-    if qpos.ndim != 2 or qpos.shape[1] != 7 + _EXPECTED_JOINTS:
+    if qpos.ndim != 2 or qpos.shape[1] != 7 + layout.num_joints:
         raise ValueError(
-            f"qpos must be (N, {7 + _EXPECTED_JOINTS}), got {qpos.shape}"
+            f"qpos must be (N, {7 + layout.num_joints}), got {qpos.shape}"
         )
 
-    model, body_filter = _get_model()
+    model, body_filter = layout.model, layout.body_filter
     data = mj.MjData(model)
     num_frames = qpos.shape[0]
     num_bodies = body_filter.shape[0]
 
+    dofs = qpos[:, 7:] if layout.qpos_to_mjcf is None else qpos[:, 7:][:, layout.qpos_to_mjcf]
     # [quat, pos, dof] -> MuJoCo's [pos, quat, dof].
-    mj_qpos = np.concatenate([qpos[:, 4:7], qpos[:, :4], qpos[:, 7:]], axis=1)
+    mj_qpos = np.concatenate([qpos[:, 4:7], qpos[:, :4], dofs], axis=1)
 
-    joint_pos = qpos[:, 7:].copy()
+    joint_pos = dofs.copy()
     body_pos_w = np.zeros((num_frames, num_bodies, 3), dtype=np.float32)
     body_quat_w = np.zeros((num_frames, num_bodies, 4), dtype=np.float32)
 
@@ -126,12 +174,24 @@ def qpos_to_tracking(qpos: np.ndarray, fps: int) -> dict[str, np.ndarray]:
         for j in range(num_bodies):
             body_ang_vel_w[i, j] = _angular_velocity(a[j], b[j], step)
 
+    if layout.joint_mapping is None:
+        return {
+            "fps": np.array([fps], dtype=np.int64),
+            "joint_pos": joint_pos,
+            "joint_vel": joint_vel,
+            "body_pos_w": body_pos_w,
+            "body_quat_w": body_quat_w,
+            "body_lin_vel_w": body_lin_vel_w,
+            "body_ang_vel_w": body_ang_vel_w,
+            "joint_names": np.array(layout.joint_names),
+            "body_names": np.array(layout.body_names),
+        }
     return {
         "fps": np.array([fps], dtype=np.int64),
-        "joint_pos": joint_pos[:, _JOINT_MAPPING],
-        "joint_vel": joint_vel[:, _JOINT_MAPPING],
-        "body_pos_w": body_pos_w[:, _BODY_MAPPING],
-        "body_quat_w": body_quat_w[:, _BODY_MAPPING],
-        "body_lin_vel_w": body_lin_vel_w[:, _BODY_MAPPING],
-        "body_ang_vel_w": body_ang_vel_w[:, _BODY_MAPPING],
+        "joint_pos": joint_pos[:, layout.joint_mapping],
+        "joint_vel": joint_vel[:, layout.joint_mapping],
+        "body_pos_w": body_pos_w[:, layout.body_mapping],
+        "body_quat_w": body_quat_w[:, layout.body_mapping],
+        "body_lin_vel_w": body_lin_vel_w[:, layout.body_mapping],
+        "body_ang_vel_w": body_ang_vel_w[:, layout.body_mapping],
     }

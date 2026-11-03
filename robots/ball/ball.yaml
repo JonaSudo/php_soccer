@@ -1,0 +1,17 @@
+# Soccer ball for LUPUS training. Every value has a status like
+# robots/lupus/hardware.yaml: cad / estimate / rules / measured.
+# Change values here and rebuild with `python robots/ball/build_ball.py`.
+#
+# Open question (plan, "Liga und Ball"): diameter and mass per league rules.
+# Until that is settled the values are an estimate for a size-1 / KidSize
+# style ball. Replace them with the rulebook numbers and set status: rules.
+diameter: {value: 0.15, status: estimate}   # m
+mass: {value: 0.20, status: estimate}       # kg, solid sphere inertia is NOT used:
+# a soccer ball is a thin shell, I = 2/3 m r^2
+shell_inertia: true
+# Contact material (PhysX has no rolling friction; rolling loss on turf is
+# modelled with linear/angular damping, see lupus_kick.py randomization).
+friction: {value: 0.8, status: estimate}
+restitution: {value: 0.5, status: estimate}
+linear_damping: {value: 0.3, status: estimate}   # 1/s, calibrate against measured roll-out
+angular_damping: {value: 0.3, status: estimate}

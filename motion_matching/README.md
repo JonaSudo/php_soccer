@@ -118,3 +118,42 @@ databases were built with.
 joints. In the base frame left and right joints share their axes, so mirroring
 flips all roll and yaw joints (including `head_yaw`). There are no LUPUS
 databases yet; they follow once retargeted clips exist (Phase 1 of the plan).
+
+## Soccer: walk, kick, walk
+
+The soccer scenarios in [soccer.py](motion_matching/scenarios/soccer.py)
+replace the parkour one-hot with a continuous command: `vel_cmd` is `(T, 2)`
+float32 `[v (m/s), omega (rad/s)]`, held at `(v_before, 0)` during a kick. The
+ball replaces the terrain box: when a kick skill is entered, its annotated
+resting ball is placed with the same clip-to-world transform a terrain box gets.
+
+| Scenario | Content | `kick_enable` |
+| --- | --- | --- |
+| `walk_kick` | stand, random walk 0.1-3 s, straight run-up, kick, 2 s walk, stand | 1 |
+| `stand_kick` | stand at the ball 0.5-3 s, rising edge, kick, stand or walk off | 0 then 1 |
+| `stand_ball_outside_zone` | stand, ball just outside the kick zone | 0, 1 or 0 then 1 |
+| `walk_ball_offpath` | random walk, ball 0.25-1.0 m beside the path | 0 or 1 |
+| `walk_no_ball` | random walk, ball parked at least 5 m away | 0 or 1 |
+
+Command ranges, corridor (kick under 0.10 m, ignore from 0.25 m) and the stand
+kick zone are constants at the top of `soccer.py` (placeholders until LUPUS'
+limits are known). Soccer motions carry these extra fields, checked by
+`validate_kick_npz` in [kick_io.py](motion_matching/io/kick_io.py):
+`object_pos_w`, `object_quat_w`, `object_lin_vel_w`, `kick_enable`,
+`kick_phase` (0 walk/stand, 1 commit, 2 after contact), `contact_frame`,
+`kick_dir` and `kick_mode` (Phase 6 placeholders), plus `kick_side` and
+`scenario`. The ball radius comes from `robots/ball/ball.yaml`.
+
+Kick skills (`kick_right`, `kick_left`, `kick_stand_right`, `kick_stand_left`)
+take their search ranges from a sidecar next to the database, built from
+annotated clips (format in `kick_io.py`):
+
+```bash
+python -m motion_matching.build_kick_database --robot lupus --family kick_run path/to/run_kicks/
+python -m motion_matching.build_kick_database --robot lupus --family kick_stand path/to/stand_kicks/
+python -m motion_matching.run --mode generate --robot lupus --scenario walk_kick
+```
+
+Until the real clips exist, `python -m motion_matching.placeholder_clips --robot g1 --build`
+writes synthetic stand-in clips and databases so the whole path can be run and
+tested on a CPU.

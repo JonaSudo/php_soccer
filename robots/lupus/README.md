@@ -77,12 +77,28 @@ python -m wbt_training.train_agent exp:lupus-loco simulator:mujoco logger:disabl
 - **PD-Gains (Startwerte):** Beine kp 100 / kd 3, Arme 20 / 0,5, Hals 5 / 0,5. Action-Scale 0,25 wie im T1-Rezept.
 - **Befund:** Nur mit PD (ohne Policy) hält LUPUS die gebeugte Default-Pose ca. 1,5 bis 3 s und kippt dann langsam. Mit kp 60 am Sprunggelenk und der Randomisierung (+3 kg Rumpf, −10 % kp) ging es schneller. Das Gleichgewicht ist Aufgabe der Policy. Auffällig ist aber, dass das Sprunggelenk-Pitch mit den geschätzten Hebeln nur 14 N·m Spitzenmoment hat; die echten Hebelmaße (`ankle_linkage`) sind deshalb wichtig.
 
+## Sim2Sim (MuJoCo, ohne GPU)
+
+Holosomas eigener Sim2Sim-Weg (`run_sim.py` + `holosoma_inference`) braucht eine Roboter-SDK-Bridge (Unitree/Booster), die es für LUPUS noch nicht gibt. `wbt_training/sim2sim/lupus_sim2sim.py` spielt eine exportierte Policy deshalb direkt in `lupus.xml` ab: PD mit 200 Hz in 50-Hz-Policy-Schritten, Beobachtung genau wie im Training (Terme alphabetisch, ohne History), Gangphase wie `LocomotionGait` im Eval-Modus, Hals passiv. Gains und Action-Scale kommen aus den ONNX-Metadaten; eine falsche Gelenkreihenfolge im ONNX wird abgelehnt. Zur Laufzeit braucht das Skript nur `numpy`, `mujoco` und `onnxruntime`.
+
+```bash
+python -m wbt_training.sim2sim.lupus_sim2sim --onnx logs/lupus-loco/<run>/model_25000.onnx --vx 0.5 --seconds 10   # Metriken als JSON
+python -m wbt_training.sim2sim.lupus_sim2sim --onnx ... --vx 0.5 --viewer                                        # mit Fenster
+```
+
+Ausgabe: mittlere Geschwindigkeit vx/vy/ωz im Basisrahmen, Sturz und Zeitpunkt, größtes Verhältnis Moment/Limit, Wegstrecke.
+
+## Motion-Export für das Tracking-Training
+
+`qpos_to_tracking(qpos, fps, robot="lupus")` und `save_motion_npz(..., robot="lupus")` rechnen die Vorwärtskinematik mit `lupus.xml`. Eingang ist das Motion-Matching-qpos `[root_quat_wxyz, root_pos, 22 DoF in RobotSpec-Reihenfolge]`. Ausgabe: Gelenke und alle 25 Bodies in MJCF-Reihenfolge (= `DOF_NAMES`/`BODY_NAMES` der Holosoma-Config), dazu `joint_names` und `body_names` im npz. `wbt_training/training_runs/motion_convert.py` erkennt die Namen und ergänzt nur die Root-DoFs; G1 bleibt unverändert.
+
 ## Geprüft
 
 - `lupus.xml` in MuJoCo: 19,5 kg, Schwerpunkt 0,3 cm vor den Sprunggelenken und mittig. Mit PD-Haltung (kp 100 an Beinen) steht LUPUS 4 s in der Nullpose, nur die Füße berühren den Boden; eine Kniebeuge (Knie 1,0 rad) hält mit ca. 13 N·m pro Knie.
 - **Hinweis für die PD-Gains:** Die Steifigkeit im Sprunggelenk muss über m·g·h ≈ 50 N·m/rad pro Fuß liegen, sonst kippt LUPUS als umgekehrtes Pendel langsam nach vorn (mit kp 40 am Sprunggelenk passiert das nach etwa 2 s).
 - `tests/test_lupus_model.py`: keine Platzhalter-Limits mehr, URDF und Gelenktabelle passen zusammen, Trägheitsberechnung stimmt am Einheitswürfel, nur primitive Kollisionen mit echter Sohlengröße, Basis auf Hüft-Pitch-Mitte, MJCF-Masse/Schwerpunkt und 2 s Stehen (nur mit Meshes).
 - `wbt_training/tests/test_lupus_config.py`: `exp:lupus-loco` wählbar, Listen pro Gelenk vollständig, Default-Pose in den Limits, Namen und Reihenfolge = `lupus.xml`, Basishöhe stimmt, Holosoma-Env mit MuJoCo-Backend steht 1 s und ignoriert Hals-Ausgaben der Policy. Ein PPO-Durchlauf (2 Iterationen, 1 Env, CPU) läuft durch.
+- `wbt_training/tests/test_lupus_sim2sim.py`: Sim2Sim-Beobachtung = `actor_obs` der Holosoma-MuJoCo-Env (Abweichung < 1e-5 über 30 Schritte mit Zufallsaktionen), PD-Schritt stimmt bis auf Kontaktunterschiede (Holosoma legt einen zweiten Boden an), ONNX-Export mit Metadaten wird geladen, Hals bleibt passiv, und die ganze Kette CPU-Training (1 Iteration) → ONNX → Sim2Sim läuft.
 - Motion Matching: `RobotSpec` `lupus` (`motion_matching/tests/test_robot_spec.py`): Bone-Modell = URDF-Vorwärtskinematik, Spiegelregeln spiegeln die Pose exakt, Limits links/rechts spiegelsymmetrisch.
 
 ## Offene Fragen
