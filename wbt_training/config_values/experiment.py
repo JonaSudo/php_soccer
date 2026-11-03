@@ -25,6 +25,7 @@ from holosoma.config_values import simulator
 from holosoma.config_values.logger import wandb as wandb_logger
 from holosoma.config_values.wbt.g1.experiment import g1_29dof_wbt
 
+from wbt_training.config_values.lupus import lupus_loco
 from wbt_training.config_values.depth_distillation import (
     g1_29dof_wbt_terrain_distill_command,
     g1_29dof_wbt_terrain_distill_curriculum,
@@ -305,6 +306,8 @@ DEFAULTS = {
     "g1_wbt_terrain_warp_distill": g1_wbt_terrain_warp_distill,
     # Depth distillation: DAgger + PPO combined-loss finetune.
     "g1_wbt_terrain_warp_distill_finetune": g1_wbt_terrain_warp_distill_finetune,
+    # LUPUS Phase 0: plain velocity-tracking policy to validate the robot model.
+    "lupus_loco": lupus_loco,
 }
 
 AnnotatedExperimentConfig = Annotated[

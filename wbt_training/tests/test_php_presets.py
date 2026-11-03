@@ -161,8 +161,12 @@ def test_converter_works_with_only_numpy(tmp_path):
     assert result.returncode == 0, result.stderr
 
 
-def test_registry_contains_only_the_eight_php_presets():
-    assert set(experiment.DEFAULTS) == set(PHP_PRESETS)
+# LUPUS presets live in wbt_training/config_values/lupus.py (tests in test_lupus_config.py).
+LUPUS_PRESETS = ("lupus_loco",)
+
+
+def test_registry_contains_the_eight_php_presets_and_lupus():
+    assert set(experiment.DEFAULTS) == set(PHP_PRESETS) | set(LUPUS_PRESETS)
     local_presets = {
         name
         for name, value in vars(experiment).items()
@@ -197,7 +201,7 @@ def test_wandb_logging_can_be_disabled_explicitly(name):
 
 def test_serialized_presets_use_the_supported_php_checkpoint_paths():
     paths = {
-        path for cfg in experiment.DEFAULTS.values() for path in _php_paths(asdict(cfg))
+        path for name in PHP_PRESETS for path in _php_paths(asdict(experiment.DEFAULTS[name]))
     }
     assert paths == set(PHP_CHECKPOINT_PATHS)
 

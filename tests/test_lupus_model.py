@@ -59,7 +59,8 @@ def test_motor_derived_values():
 
 
 def test_mass_target_matches_reference():
-    assert build_urdf.total_mass(URDF) == pytest.approx(HW["mass_target"]["total"], abs=1e-6)
+    # + 2 g for the two foot contact points added after the mass target
+    assert build_urdf.total_mass(URDF) == pytest.approx(HW["mass_target"]["total"] + 0.002, abs=1e-6)
 
 
 def test_every_joint_names_its_source():
@@ -116,8 +117,8 @@ def test_mjcf_mass_com_and_standing():
 
     m = mujoco.MjModel.from_xml_path(str(LUPUS / "lupus.xml"))
     d = mujoco.MjData(m)
-    assert m.nu == 22 and m.nbody == 24
-    assert m.body_subtreemass[1] == pytest.approx(HW["mass_target"]["total"], abs=1e-3)
+    assert m.nu == 22 and m.nbody == 26  # world + 23 segments + 2 foot contact points
+    assert m.body_subtreemass[1] == pytest.approx(HW["mass_target"]["total"], abs=3e-3)
     mujoco.mj_forward(m, d)
     # center of mass inside the sole, above the ankles
     feet = [d.geom_xpos[m.geom(f"{s}_foot_link_collision").id] for s in ("left", "right")]
@@ -136,4 +137,6 @@ def test_mjcf_mass_com_and_standing():
     assert d.qpos[2] == pytest.approx(m.body_pos[1][2], abs=0.01)
     assert abs(d.qpos[3]) > 0.999  # quaternion w: no tilt
     touching = {m.body(m.geom_bodyid[g]).name for c in d.contact[: d.ncon] for g in (c.geom1, c.geom2)} - {"world"}
+    contact_points = [d.xpos[m.body(f"{s}_foot_contact_point").id] for s in ("left", "right")]
+    assert max(abs(p[2]) for p in contact_points) < 0.005  # contact points sit on the sole
     assert touching == {"left_foot_link", "right_foot_link"}

@@ -57,11 +57,32 @@ grep -n "k1_reference\|estimate" robots/lupus/hardware.yaml
 
 **MJCF.** `build_mjcf.py` verschmilzt die festen Links selbst (Trägheiten per Steiner), weil MuJocos `fusestatic` die Schwerpunkte bei diesem URDF falsch setzt (MuJoCo 3.8: Rumpf-Schwerpunkt 26 cm vor dem Becken). Der Spawn liegt so, dass die Sohlen den Boden berühren.
 
+**Fußkontaktpunkte.** `left/right_foot_contact_point` sitzen in der Sohlenmitte (fest, `dont_collapse`, 1 g), wie beim T1. Holosoma misst daran Fußhöhe und Schwungphase.
+
+**Gelenkreihenfolge.** Im MJCF und in der Holosoma-Config: linkes Bein, rechtes Bein, linker Arm, rechter Arm, Hals. Die Policy-Gelenke stehen damit vorn, der Hals am Ende.
+
+## Holosoma-Config und Test-Locomotion
+
+Die Robot-Config `lupus_22dof` und das Experiment `exp:lupus-loco` liegen in `wbt_training/config_values/lupus.py`. Limits, Drehmomente, Geschwindigkeiten und Armature liest sie aus `lupus_joints.yaml`, es gibt also keine doppelten Zahlen. `exp:lupus-loco` ist die Validierung aus Phase 0: eine normale Velocity-Tracking-Policy nach dem T1-Locomotion-Rezept, Command (v, ω) ohne Seitschritte.
+
+```bash
+# Training auf den A6000 (IsaacSim wandelt lupus.urdf beim Start in USD um)
+python -m wbt_training.train_agent exp:lupus-loco simulator:isaacsim --training.headless True
+# Schnelltest ohne GPU (1 Env, MuJoCo)
+python -m wbt_training.train_agent exp:lupus-loco simulator:mujoco logger:disabled --training.num-envs 1 --algo.config.num-learning-iterations 2
+```
+
+- **Hals außerhalb des Action-Space:** Holosoma koppelt den Action-Vektor an alle Gelenke. `PassiveNeckJointPositionActionTerm` ersetzt deshalb die beiden Hals-Ausgaben vor dem PD-Regler durch ein Hals-Ziel (Default-Pose, später der Kopf-Scan-Generator in `passive_targets`). Auf dem Roboter werden die Hals-Ausgaben ignoriert.
+- **Default-Pose:** Hüfte pitch −0,2, Knie 0,4, Sprunggelenk −0,2 (Fuß flach), Ellenbogen −0,3; Basis auf 0,573 m.
+- **PD-Gains (Startwerte):** Beine kp 100 / kd 3, Arme 20 / 0,5, Hals 5 / 0,5. Action-Scale 0,25 wie im T1-Rezept.
+- **Befund:** Nur mit PD (ohne Policy) hält LUPUS die gebeugte Default-Pose ca. 1,5 bis 3 s und kippt dann langsam. Mit kp 60 am Sprunggelenk und der Randomisierung (+3 kg Rumpf, −10 % kp) ging es schneller. Das Gleichgewicht ist Aufgabe der Policy. Auffällig ist aber, dass das Sprunggelenk-Pitch mit den geschätzten Hebeln nur 14 N·m Spitzenmoment hat; die echten Hebelmaße (`ankle_linkage`) sind deshalb wichtig.
+
 ## Geprüft
 
 - `lupus.xml` in MuJoCo: 19,5 kg, Schwerpunkt 0,3 cm vor den Sprunggelenken und mittig. Mit PD-Haltung (kp 100 an Beinen) steht LUPUS 4 s in der Nullpose, nur die Füße berühren den Boden; eine Kniebeuge (Knie 1,0 rad) hält mit ca. 13 N·m pro Knie.
 - **Hinweis für die PD-Gains:** Die Steifigkeit im Sprunggelenk muss über m·g·h ≈ 50 N·m/rad pro Fuß liegen, sonst kippt LUPUS als umgekehrtes Pendel langsam nach vorn (mit kp 40 am Sprunggelenk passiert das nach etwa 2 s).
 - `tests/test_lupus_model.py`: keine Platzhalter-Limits mehr, URDF und Gelenktabelle passen zusammen, Trägheitsberechnung stimmt am Einheitswürfel, nur primitive Kollisionen mit echter Sohlengröße, Basis auf Hüft-Pitch-Mitte, MJCF-Masse/Schwerpunkt und 2 s Stehen (nur mit Meshes).
+- `wbt_training/tests/test_lupus_config.py`: `exp:lupus-loco` wählbar, Listen pro Gelenk vollständig, Default-Pose in den Limits, Namen und Reihenfolge = `lupus.xml`, Basishöhe stimmt, Holosoma-Env mit MuJoCo-Backend steht 1 s und ignoriert Hals-Ausgaben der Policy. Ein PPO-Durchlauf (2 Iterationen, 1 Env, CPU) läuft durch.
 - Motion Matching: `RobotSpec` `lupus` (`motion_matching/tests/test_robot_spec.py`): Bone-Modell = URDF-Vorwärtskinematik, Spiegelregeln spiegeln die Pose exakt, Limits links/rechts spiegelsymmetrisch.
 
 ## Offene Fragen

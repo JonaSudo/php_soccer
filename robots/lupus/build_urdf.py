@@ -246,14 +246,18 @@ def apply_mass_target(robot: ET.Element, target: dict | None) -> list[str]:
 
 # --------------------------------------------------------------------------- collisions
 def segments(robot: ET.Element) -> dict[str, str]:
-    """Rigid segment of every link: the child link of the nearest movable joint above it (or the root)."""
+    """Rigid segment of every link: the child link of the nearest movable joint above it (or the root).
+
+    A fixed joint marked ``dont_collapse="true"`` (foot contact points) also
+    starts a segment, like in holosoma's T1 URDF."""
     by_child = {j.find("child").get("link"): j for j in robot.findall("joint")}
     out: dict[str, str] = {}
 
     def seg(link: str) -> str:
         if link not in out:
             j = by_child.get(link)
-            out[link] = link if j is None or j.get("type") != "fixed" else seg(j.find("parent").get("link"))
+            keep = j is None or j.get("type") != "fixed" or j.get("dont_collapse") == "true"
+            out[link] = link if keep else seg(j.find("parent").get("link"))
         return out[link]
 
     for l in robot.findall("link"):
@@ -336,6 +340,44 @@ def simplify_collisions(robot: ET.Element, cfg: dict | None, mesh_dir: Path) -> 
     return log
 
 
+def add_foot_contact_points(robot: ET.Element, feet: list[str] | None) -> list[str]:
+    """Add ``<side>_foot_contact_point`` links at the center of each sole.
+
+    Holosoma's locomotion env measures foot height and contacts on these
+    bodies (``foot_height_name``). They sit at the bottom center of the foot
+    collision box, are fixed with ``dont_collapse="true"`` so the importers
+    keep them, and carry a tiny mass plus an invisible visual (IsaacLab's USD
+    conversion needs a visual on every link).
+    """
+    if not feet:
+        return []
+    world = world_transforms(robot)
+    links = {l.get("name"): l for l in robot.findall("link")}
+    log = []
+    for foot in feet:
+        col = links[foot].find("collision")
+        size = np.array(list(map(float, col.find("geometry/box").get("size").split())))
+        t_box = world[foot] @ origin_matrix(col.find("origin"))
+        corners = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)]) * size / 2
+        z_min = (corners @ t_box[:3, :3].T + t_box[:3, 3])[:, 2].min()
+        p_world = np.array([t_box[0, 3], t_box[1, 3], z_min])
+        p_local = np.linalg.inv(world[foot]) @ np.append(p_world, 1.0)
+        name = foot.replace("_foot_link", "_foot_contact_point")
+        link = ET.SubElement(robot, "link", name=name)
+        set_inertial(link, 0.001, np.zeros(3), np.eye(3) * 1e-6)
+        vis = ET.SubElement(link, "visual")
+        ET.SubElement(vis, "origin", xyz="0 0 0", rpy="0 0 0")
+        ET.SubElement(ET.SubElement(vis, "geometry"), "sphere", radius="0.0001")
+        j = ET.SubElement(robot, "joint", name=name, type="fixed", dont_collapse="true")
+        ET.SubElement(j, "parent", link=foot)
+        ET.SubElement(j, "child", link=name)
+        # orientation aligned with the base frame at the zero pose
+        r = world[foot][:3, :3].T
+        ET.SubElement(j, "origin", xyz=" ".join(map(fmt, p_local[:3])), rpy=" ".join(map(fmt, matrix_to_rpy(r))))
+        log.append(f"{name}: sole center {np.round(p_world, 4).tolist()} (CAD frame)")
+    return log
+
+
 # --------------------------------------------------------------------------- base frame
 def reroot_base(robot: ET.Element, cfg: dict | None) -> list[str]:
     """Move the base_link origin from the CAD origin (ground) to the pelvis.
@@ -389,6 +431,7 @@ def build(source: Path, hw: dict, mesh_dir: Path) -> tuple[ET.ElementTree, dict,
     add_neck(robot, hw["neck"], specs)
     log += apply_mass_target(robot, hw.get("mass_target"))
     log += simplify_collisions(robot, hw.get("collision"), mesh_dir)
+    log += add_foot_contact_points(robot, hw.get("foot_contact_points"))
     # last: every *_base coordinate in hardware.yaml is in the CAD base frame
     log += reroot_base(robot, hw.get("base_frame"))
 

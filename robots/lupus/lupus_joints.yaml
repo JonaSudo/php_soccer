@@ -1,5 +1,5 @@
 generated_by: robots/lupus/build_urdf.py
-total_mass_kg: 19.5
+total_mass_kg: 19.502
 joints:
   left_hip_pitch:
     lower: -2.958

@@ -85,7 +85,7 @@ def fuse_fixed_links(robot: ET.Element) -> None:
 
     for j in list(robot.findall("joint")):
         parent, child = j.find("parent").get("link"), j.find("child").get("link")
-        if j.get("type") == "fixed":
+        if j.get("type") == "fixed" and j.get("dont_collapse") != "true":
             robot.remove(j)
         elif seg_of[parent] != parent:
             t = np.linalg.inv(world[seg_of[parent]]) @ world[parent] @ b.origin_matrix(j.find("origin"))
@@ -160,11 +160,22 @@ def build(urdf: Path, joints_yaml: Path, mesh_dir: Path) -> ET.Element:
     base = world.find("body")
     if base is None or base.get("name") != "base_link":
         raise RuntimeError("expected base_link as the only top-level body")
+    # Joint (DoF) order = depth-first body order. Put legs first, then arms,
+    # then the neck, so the policy joints come first and the neck last
+    # (matches the holosoma robot config in wbt_training/config_values/lupus.py).
+    order = ["left_hip_link", "right_hip_link", "left_shoulder_link", "right_shoulder_link", "neck_link"]
+    children = {c.get("name"): c for c in base.findall("body")}
+    if set(children) != set(order):
+        raise RuntimeError(f"unexpected children of base_link: {sorted(children)}")
+    for name in order:
+        base.remove(children[name])
+        base.append(children[name])
 
     for body in m.iter("body"):
         for g in body.findall("geom"):
             if g.get("contype") == "0" and g.get("conaffinity") == "0":  # URDF <visual>
-                keep = {k: g.get(k) for k in ("type", "mesh", "size", "pos", "quat", "rgba") if g.get(k)}
+                # MuJoCo omits type="sphere" (its default) when saving
+                keep = {"type": g.get("type", "sphere"), **{k: g.get(k) for k in ("mesh", "size", "pos", "quat", "rgba") if g.get(k)}}
                 g.attrib = {"class": "visual", **keep}
             else:
                 keep = {"name": f"{body.get('name')}_collision", **{k: g.get(k) for k in ("type", "size", "pos", "quat") if g.get(k)}}

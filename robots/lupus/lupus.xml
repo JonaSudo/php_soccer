@@ -242,64 +242,12 @@
                   <geom class="foot" name="left_foot_link_collision" type="box" size="0.15 0.055 0.015" pos="0 0.03 0.0495" quat="0.5 0.5 -0.5 0.5" />
                   <geom class="visual" type="mesh" mesh="robot_model-footlow_1__Volumenk_rper1" pos="0 0.045 -0.0455" quat="0 1 0 0" rgba="0.909804 0.886275 0.815686 1" />
                   <geom class="visual" type="mesh" mesh="robot_model-foot_1__Volumenk_rper1" pos="-0.00600001 0.015 -0.012" quat="0 0.707107 0 -0.707107" rgba="0.784314 0.8 0.815686 1" />
+                  <body name="left_foot_contact_point" pos="0 0.045 0.0495" quat="0.5 0.5 -0.5 0.5">
+                    <inertial pos="0 0 0" mass="0.001" diaginertia="1e-06 1e-06 1e-06" />
+                    <geom class="visual" type="sphere" size="0.0001" />
+                  </body>
                 </body>
               </body>
-            </body>
-          </body>
-        </body>
-      </body>
-      <body name="left_shoulder_link" pos="0 0.15775 0.33618" quat="0.707107 -0.707107 0 0">
-        <inertial pos="-0.00223615 -0.000279996 0.0356213" quat="0.693286 -0.0973009 -0.103225 0.706563" mass="0.345249" diaginertia="0.000308978 0.000217418 0.00019039" />
-        <joint name="left_shoulder_pitch" pos="0 0 0" axis="0 0 1" range="-2.932 1.196" actuatorfrcrange="-34 34" armature="0.03888" />
-        <geom class="collision" name="left_shoulder_link_collision" type="capsule" size="0.030704 0.0074223" pos="0.00116545 3.00201e-05 0.033139" quat="0.706793 0.0210772 0.0119817 0.707005" />
-        <geom class="visual" type="mesh" mesh="robot_model-Ellenbogen_3_1__Volumenk_rper1" pos="0.0294989 -0.0230005 0.00425001" quat="0.5 0.5 0.5 0.5" rgba="0.784314 0.8 0.815686 1" />
-        <geom class="visual" type="mesh" mesh="robot_model-Ellenbogen_1__Volumenk_rper1" pos="-9.14544e-07 4.79231e-07 0.00425001" quat="0.5 0.5 0.5 0.5" rgba="0.784314 0.8 0.815686 1" />
-        <geom class="visual" type="mesh" mesh="robot_model-Ellenbogen_2_1__Volumenk_rper1" pos="-0.0345011 -0.0230005 0.00425001" quat="0.5 0.5 0.5 0.5" rgba="0.784314 0.8 0.815686 1" />
-        <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper4" pos="-0.0320011 4.79013e-07 0.04725" quat="0.270655 0.653258 -0.270655 -0.653258" rgba="0.815686 0.376471 0.121569 1" />
-        <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper2" pos="-0.0320011 4.79013e-07 0.04725" quat="0.270655 0.653258 -0.270655 -0.653258" rgba="0.815686 0.376471 0.121569 1" />
-        <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper1" pos="-0.0320011 4.79013e-07 0.04725" quat="0.270655 0.653258 -0.270655 -0.653258" rgba="0.815686 0.376471 0.121569 1" />
-        <geom class="visual" type="mesh" mesh="robot_model-RMD-X4-36_1__Volumenk_rper2" pos="-1e-06 0 -0.05675" quat="0 0.0530458 -0.998592 0" rgba="0.815686 0.376471 0.121569 1" />
-        <body name="left_upper_arm_link" pos="0.027 0 0.04725" quat="0.707107 0 0.707107 0">
-          <inertial pos="-2.5276e-05 0.128793 -0.0250346" quat="0.720334 0.693627 0.000216753 -0.000132064" mass="0.732163" diaginertia="0.00609874 0.00589069 0.000436744" />
-          <joint name="left_shoulder_roll" pos="0 0 0" axis="0 0 1" range="-0.342 2.929" actuatorfrcrange="-7 7" armature="0.01349" />
-          <geom class="collision" name="left_upper_arm_link_collision" type="capsule" size="0.023747 0.113891" pos="7.21869e-05 0.119702 -0.0159982" quat="6.35915e-05 -5.6397e-05 -0.663517 0.748162" />
-          <geom class="visual" type="mesh" mesh="robot_model-Lagerverschluss_1__Volumenk_rper1" pos="-6.46612e-09 0.254 -0.0270009" quat="3.33378e-12 -2.67975e-12 -0.707107 0.707107" rgba="0.784314 0.8 0.815686 1" />
-          <geom class="visual" type="mesh" mesh="robot_model-upper_arm_motoraufnahme_1__Volumenk_rper1" pos="-6.46635e-09 0.2275 -0.0270009" quat="-0.182953 -0.182953 -0.683029 0.683029" rgba="0.909804 0.886275 0.815686 1" />
-          <geom class="visual" type="mesh" mesh="robot_model-Lower_arm_halter2_1__Volumenk_rper1" pos="-0.023 0.0230005 -0.0615011" quat="-4.57268e-12 -0.707107 -0.707107 5.22249e-12" rgba="0.784314 0.8 0.815686 1" />
-          <geom class="visual" type="mesh" mesh="robot_model-Lagerpassung_1__Volumenk_rper1" pos="-6.46629e-09 0.2345 -0.0270009" quat="0.5 -0.5 -0.5 0.5" rgba="0.784314 0.8 0.815686 1" />
-          <geom class="visual" type="mesh" mesh="robot_model-Distanzscheibe_1__Volumenk_rper1_2" pos="-6.46628e-09 0.2355 -0.0270009" quat="0.5 0.5 -0.5 -0.5" rgba="0.784314 0.8 0.815686 1" />
-          <geom class="visual" type="mesh" mesh="robot_model-upper_arm_1__Volumenk_rper1" pos="-6.46688e-09 0.1645 -0.0270009" quat="4.25222e-12 0 -6.91924e-12 1" rgba="0.909804 0.886275 0.815686 1" />
-          <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper3" pos="6.40975e-09 4.79013e-07 -0.0590011" quat="6.57013e-12 0.923846 -0.382764 2.22447e-12" rgba="0.815686 0.376471 0.121569 1" />
-          <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper1" pos="-6.30716e-09 0.166 -0.0270009" quat="-0.430459 -0.430459 -0.560986 0.560986" rgba="0.815686 0.376471 0.121569 1" />
-          <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper4" pos="-6.30716e-09 0.166 -0.0270009" quat="-0.430459 -0.430459 -0.560986 0.560986" rgba="0.815686 0.376471 0.121569 1" />
-          <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper2" pos="-6.30716e-09 0.166 -0.0270009" quat="-0.430459 -0.430459 -0.560986 0.560986" rgba="0.815686 0.376471 0.121569 1" />
-          <geom class="visual" type="mesh" mesh="robot_model-SKF-_schr_g_SKF3203_A_1__Solid1" pos="-6.46628e-09 0.2355 -0.0270009" quat="0.5 -0.5 -0.5 -0.5" rgba="0.541176 0.560784 0.580392 1" />
-          <geom class="visual" type="mesh" mesh="robot_model-Lower_arm_halter_1__Volumenk_rper1" pos="0.023 0.0230005 0.00749891" quat="0.707107 -4.56805e-12 5.21794e-12 0.707107" rgba="0.784314 0.8 0.815686 1" />
-          <body name="left_elbow_link" pos="0 0.225 -0.027" quat="0.5 0.5 0.5 -0.5">
-            <inertial pos="-0.000183358 0.0018055 -0.0512994" quat="0.999536 0.0291778 0.0018421 0.0085738" mass="0.427393" diaginertia="0.00057039 0.000477359 0.000197157" />
-            <joint name="left_shoulder_yaw" pos="0 0 0" axis="0 0 1" range="-1.57 1.57" actuatorfrcrange="-7 7" armature="0.01349" />
-            <geom class="collision" name="left_elbow_link_collision" type="capsule" size="0.0301085 0.0214733" pos="0.000103616 -0.000841313 -0.0467115" quat="-0.00685143 -0.707074 -0.707034 0.0101141" />
-            <geom class="visual" type="mesh" mesh="robot_model-welle_1__Volumenk_rper1" pos="9.14541e-07 -6.46629e-09 -0.00900048" quat="1.88483e-12 0.707107 -0.707107 -7.8985e-12" rgba="0.784314 0.8 0.815686 1" />
-            <geom class="visual" type="mesh" mesh="robot_model-DIN_5406_Typ_MB_MBL__-_DIN_981__MB1_1__Solid1" pos="9.14541e-07 -6.46605e-09 -0.0370005" quat="0.5 0.5 0.5 -0.5" rgba="0.541176 0.560784 0.580392 1" />
-            <geom class="visual" type="mesh" mesh="robot_model-Armdistanzscheibe_1__Volumenk_rper1" pos="9.14541e-07 -6.46613e-09 -0.0280005" quat="5.21633e-12 4.56751e-12 -0.707107 0.707107" rgba="0.784314 0.8 0.815686 1" />
-            <geom class="visual" type="mesh" mesh="robot_model-Kuplungsscheibe_1__Volumenk_rper1" pos="9.14541e-07 -6.46633e-09 -0.00450048" quat="7.89846e-12 -0.707107 -0.707107 1.88494e-12" rgba="0.784314 0.8 0.815686 1" />
-            <geom class="visual" type="mesh" mesh="robot_model-Ellenbogen_3_1__Volumenk_rper1" pos="0.0230009 -0.0295 -0.0320005" quat="5.21611e-12 4.56701e-12 -0.707107 0.707107" rgba="0.784314 0.8 0.815686 1" />
-            <geom class="visual" type="mesh" mesh="robot_model-DIN_981_KM_1_1__Solid1" pos="9.1454e-07 -6.46601e-09 -0.0420005" quat="0.5 -0.5 -0.5 -0.5" rgba="0.541176 0.560784 0.580392 1" />
-            <geom class="visual" type="mesh" mesh="robot_model-Ellenbogen_2_1__Volumenk_rper1" pos="0.0230009 0.0345 -0.0320005" quat="5.21561e-12 4.56685e-12 -0.707107 0.707107" rgba="0.784314 0.8 0.815686 1" />
-            <geom class="visual" type="mesh" mesh="robot_model-Ellenbogen_1__Volumenk_rper1" pos="9.14541e-07 -6.46605e-09 -0.0370005" quat="0.707107 0.707107 4.56729e-12 -5.2166e-12" rgba="0.784314 0.8 0.815686 1" />
-            <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper3" pos="9.14702e-07 -6.30716e-09 0.0589995" quat="0.991445 3.31277e-12 7.41346e-12 -0.130526" rgba="0.815686 0.376471 0.121569 1" />
-            <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper4" pos="9.1454e-07 0.032 -0.0750005" quat="0.270655 -0.270655 -0.653258 -0.653258" rgba="0.815686 0.376471 0.121569 1" />
-            <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper2" pos="9.1454e-07 0.032 -0.0750005" quat="0.270655 -0.270655 -0.653258 -0.653258" rgba="0.815686 0.376471 0.121569 1" />
-            <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper1" pos="9.1454e-07 0.032 -0.0750005" quat="0.270655 -0.270655 -0.653258 -0.653258" rgba="0.815686 0.376471 0.121569 1" />
-            <geom class="visual" type="mesh" mesh="robot_model-SKF-_schr_g_SKF3203_A_1__Solid1_2" pos="9.14541e-07 -6.46628e-09 -0.0105005" quat="-6.91719e-12 0 1 4.25193e-12" rgba="0.541176 0.560784 0.580392 1" />
-            <body name="left_forearm_link" pos="0 -0.027 -0.075" quat="0 0 -0.707107 0.707107">
-              <inertial pos="-1.08685e-06 0.0811441 -0.0233385" quat="0.721652 0.692256 1.80259e-05 -2.50141e-05" mass="0.426373" diaginertia="0.00354969 0.00334292 0.000314475" />
-              <joint name="left_elbow" pos="0 0 0" axis="0 0 1" range="-1.885 0" actuatorfrcrange="-7 7" armature="0.01349" />
-              <geom class="collision" name="left_forearm_link_collision" type="capsule" size="0.0217231 0.137277" pos="-0.000108609 0.141422 -0.016066" quat="0.524228 0.474536 -0.47381 0.524885" />
-              <geom class="visual" type="mesh" mesh="robot_model-Lower_arm_halter2_1__Volumenk_rper1" pos="-0.0230009 0.0230005 -0.0615" quat="-2.68258e-12 -0.707107 -0.707107 3.33178e-12" rgba="0.784314 0.8 0.815686 1" />
-              <geom class="visual" type="mesh" mesh="robot_model-Lower_arm_halter_1__Volumenk_rper1" pos="0.0229991 0.0230005 0.00750001" quat="0.707107 -2.68206e-12 3.33122e-12 0.707107" rgba="0.784314 0.8 0.815686 1" />
-              <geom class="visual" type="mesh" mesh="robot_model-Stumpf2_1__Volumenk_rper1" pos="0.0229991 0.0230005 -0.0615" quat="4.56784e-12 5.21738e-12 0.707107 0.707107" rgba="0.909804 0.886275 0.815686 1" />
-              <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper3" pos="-9.1454e-07 4.79013e-07 -0.059" quat="4.10426e-12 0.923846 -0.382764 1.20375e-12" rgba="0.815686 0.376471 0.121569 1" />
             </body>
           </body>
         </body>
@@ -387,8 +335,68 @@
                   <geom class="foot" name="right_foot_link_collision" type="box" size="0.15 0.055 0.015" pos="-1.29366e-08 0.03 0.0495" quat="0.5 0.5 -0.5 0.5" />
                   <geom class="visual" type="mesh" mesh="robot_model-footlow_MIR_1__Volumenk_rper1" pos="-1.29366e-08 0.045 -0.0455" quat="0 0 0 1" rgba="0.909804 0.886275 0.815686 1" />
                   <geom class="visual" type="mesh" mesh="robot_model-foot_MIR_1__Volumenk_rper1" pos="0.00599999 0.015 -0.012" quat="0 -0.707107 0 0.707107" rgba="0.784314 0.8 0.815686 1" />
+                  <body name="right_foot_contact_point" pos="-1.29366e-08 0.045 0.0495" quat="0.5 0.5 -0.5 0.5">
+                    <inertial pos="0 0 0" mass="0.001" diaginertia="1e-06 1e-06 1e-06" />
+                    <geom class="visual" type="sphere" size="0.0001" />
+                  </body>
                 </body>
               </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="left_shoulder_link" pos="0 0.15775 0.33618" quat="0.707107 -0.707107 0 0">
+        <inertial pos="-0.00223615 -0.000279996 0.0356213" quat="0.693286 -0.0973009 -0.103225 0.706563" mass="0.345249" diaginertia="0.000308978 0.000217418 0.00019039" />
+        <joint name="left_shoulder_pitch" pos="0 0 0" axis="0 0 1" range="-2.932 1.196" actuatorfrcrange="-34 34" armature="0.03888" />
+        <geom class="collision" name="left_shoulder_link_collision" type="capsule" size="0.030704 0.0074223" pos="0.00116545 3.00201e-05 0.033139" quat="0.706793 0.0210772 0.0119817 0.707005" />
+        <geom class="visual" type="mesh" mesh="robot_model-Ellenbogen_3_1__Volumenk_rper1" pos="0.0294989 -0.0230005 0.00425001" quat="0.5 0.5 0.5 0.5" rgba="0.784314 0.8 0.815686 1" />
+        <geom class="visual" type="mesh" mesh="robot_model-Ellenbogen_1__Volumenk_rper1" pos="-9.14544e-07 4.79231e-07 0.00425001" quat="0.5 0.5 0.5 0.5" rgba="0.784314 0.8 0.815686 1" />
+        <geom class="visual" type="mesh" mesh="robot_model-Ellenbogen_2_1__Volumenk_rper1" pos="-0.0345011 -0.0230005 0.00425001" quat="0.5 0.5 0.5 0.5" rgba="0.784314 0.8 0.815686 1" />
+        <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper4" pos="-0.0320011 4.79013e-07 0.04725" quat="0.270655 0.653258 -0.270655 -0.653258" rgba="0.815686 0.376471 0.121569 1" />
+        <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper2" pos="-0.0320011 4.79013e-07 0.04725" quat="0.270655 0.653258 -0.270655 -0.653258" rgba="0.815686 0.376471 0.121569 1" />
+        <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper1" pos="-0.0320011 4.79013e-07 0.04725" quat="0.270655 0.653258 -0.270655 -0.653258" rgba="0.815686 0.376471 0.121569 1" />
+        <geom class="visual" type="mesh" mesh="robot_model-RMD-X4-36_1__Volumenk_rper2" pos="-1e-06 0 -0.05675" quat="0 0.0530458 -0.998592 0" rgba="0.815686 0.376471 0.121569 1" />
+        <body name="left_upper_arm_link" pos="0.027 0 0.04725" quat="0.707107 0 0.707107 0">
+          <inertial pos="-2.5276e-05 0.128793 -0.0250346" quat="0.720334 0.693627 0.000216753 -0.000132064" mass="0.732163" diaginertia="0.00609874 0.00589069 0.000436744" />
+          <joint name="left_shoulder_roll" pos="0 0 0" axis="0 0 1" range="-0.342 2.929" actuatorfrcrange="-7 7" armature="0.01349" />
+          <geom class="collision" name="left_upper_arm_link_collision" type="capsule" size="0.023747 0.113891" pos="7.21869e-05 0.119702 -0.0159982" quat="6.35915e-05 -5.6397e-05 -0.663517 0.748162" />
+          <geom class="visual" type="mesh" mesh="robot_model-Lagerverschluss_1__Volumenk_rper1" pos="-6.46612e-09 0.254 -0.0270009" quat="3.33378e-12 -2.67975e-12 -0.707107 0.707107" rgba="0.784314 0.8 0.815686 1" />
+          <geom class="visual" type="mesh" mesh="robot_model-upper_arm_motoraufnahme_1__Volumenk_rper1" pos="-6.46635e-09 0.2275 -0.0270009" quat="-0.182953 -0.182953 -0.683029 0.683029" rgba="0.909804 0.886275 0.815686 1" />
+          <geom class="visual" type="mesh" mesh="robot_model-Lower_arm_halter2_1__Volumenk_rper1" pos="-0.023 0.0230005 -0.0615011" quat="-4.57268e-12 -0.707107 -0.707107 5.22249e-12" rgba="0.784314 0.8 0.815686 1" />
+          <geom class="visual" type="mesh" mesh="robot_model-Lagerpassung_1__Volumenk_rper1" pos="-6.46629e-09 0.2345 -0.0270009" quat="0.5 -0.5 -0.5 0.5" rgba="0.784314 0.8 0.815686 1" />
+          <geom class="visual" type="mesh" mesh="robot_model-Distanzscheibe_1__Volumenk_rper1_2" pos="-6.46628e-09 0.2355 -0.0270009" quat="0.5 0.5 -0.5 -0.5" rgba="0.784314 0.8 0.815686 1" />
+          <geom class="visual" type="mesh" mesh="robot_model-upper_arm_1__Volumenk_rper1" pos="-6.46688e-09 0.1645 -0.0270009" quat="4.25222e-12 0 -6.91924e-12 1" rgba="0.909804 0.886275 0.815686 1" />
+          <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper3" pos="6.40975e-09 4.79013e-07 -0.0590011" quat="6.57013e-12 0.923846 -0.382764 2.22447e-12" rgba="0.815686 0.376471 0.121569 1" />
+          <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper1" pos="-6.30716e-09 0.166 -0.0270009" quat="-0.430459 -0.430459 -0.560986 0.560986" rgba="0.815686 0.376471 0.121569 1" />
+          <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper4" pos="-6.30716e-09 0.166 -0.0270009" quat="-0.430459 -0.430459 -0.560986 0.560986" rgba="0.815686 0.376471 0.121569 1" />
+          <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper2" pos="-6.30716e-09 0.166 -0.0270009" quat="-0.430459 -0.430459 -0.560986 0.560986" rgba="0.815686 0.376471 0.121569 1" />
+          <geom class="visual" type="mesh" mesh="robot_model-SKF-_schr_g_SKF3203_A_1__Solid1" pos="-6.46628e-09 0.2355 -0.0270009" quat="0.5 -0.5 -0.5 -0.5" rgba="0.541176 0.560784 0.580392 1" />
+          <geom class="visual" type="mesh" mesh="robot_model-Lower_arm_halter_1__Volumenk_rper1" pos="0.023 0.0230005 0.00749891" quat="0.707107 -4.56805e-12 5.21794e-12 0.707107" rgba="0.784314 0.8 0.815686 1" />
+          <body name="left_elbow_link" pos="0 0.225 -0.027" quat="0.5 0.5 0.5 -0.5">
+            <inertial pos="-0.000183358 0.0018055 -0.0512994" quat="0.999536 0.0291778 0.0018421 0.0085738" mass="0.427393" diaginertia="0.00057039 0.000477359 0.000197157" />
+            <joint name="left_shoulder_yaw" pos="0 0 0" axis="0 0 1" range="-1.57 1.57" actuatorfrcrange="-7 7" armature="0.01349" />
+            <geom class="collision" name="left_elbow_link_collision" type="capsule" size="0.0301085 0.0214733" pos="0.000103616 -0.000841313 -0.0467115" quat="-0.00685143 -0.707074 -0.707034 0.0101141" />
+            <geom class="visual" type="mesh" mesh="robot_model-welle_1__Volumenk_rper1" pos="9.14541e-07 -6.46629e-09 -0.00900048" quat="1.88483e-12 0.707107 -0.707107 -7.8985e-12" rgba="0.784314 0.8 0.815686 1" />
+            <geom class="visual" type="mesh" mesh="robot_model-DIN_5406_Typ_MB_MBL__-_DIN_981__MB1_1__Solid1" pos="9.14541e-07 -6.46605e-09 -0.0370005" quat="0.5 0.5 0.5 -0.5" rgba="0.541176 0.560784 0.580392 1" />
+            <geom class="visual" type="mesh" mesh="robot_model-Armdistanzscheibe_1__Volumenk_rper1" pos="9.14541e-07 -6.46613e-09 -0.0280005" quat="5.21633e-12 4.56751e-12 -0.707107 0.707107" rgba="0.784314 0.8 0.815686 1" />
+            <geom class="visual" type="mesh" mesh="robot_model-Kuplungsscheibe_1__Volumenk_rper1" pos="9.14541e-07 -6.46633e-09 -0.00450048" quat="7.89846e-12 -0.707107 -0.707107 1.88494e-12" rgba="0.784314 0.8 0.815686 1" />
+            <geom class="visual" type="mesh" mesh="robot_model-Ellenbogen_3_1__Volumenk_rper1" pos="0.0230009 -0.0295 -0.0320005" quat="5.21611e-12 4.56701e-12 -0.707107 0.707107" rgba="0.784314 0.8 0.815686 1" />
+            <geom class="visual" type="mesh" mesh="robot_model-DIN_981_KM_1_1__Solid1" pos="9.1454e-07 -6.46601e-09 -0.0420005" quat="0.5 -0.5 -0.5 -0.5" rgba="0.541176 0.560784 0.580392 1" />
+            <geom class="visual" type="mesh" mesh="robot_model-Ellenbogen_2_1__Volumenk_rper1" pos="0.0230009 0.0345 -0.0320005" quat="5.21561e-12 4.56685e-12 -0.707107 0.707107" rgba="0.784314 0.8 0.815686 1" />
+            <geom class="visual" type="mesh" mesh="robot_model-Ellenbogen_1__Volumenk_rper1" pos="9.14541e-07 -6.46605e-09 -0.0370005" quat="0.707107 0.707107 4.56729e-12 -5.2166e-12" rgba="0.784314 0.8 0.815686 1" />
+            <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper3" pos="9.14702e-07 -6.30716e-09 0.0589995" quat="0.991445 3.31277e-12 7.41346e-12 -0.130526" rgba="0.815686 0.376471 0.121569 1" />
+            <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper4" pos="9.1454e-07 0.032 -0.0750005" quat="0.270655 -0.270655 -0.653258 -0.653258" rgba="0.815686 0.376471 0.121569 1" />
+            <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper2" pos="9.1454e-07 0.032 -0.0750005" quat="0.270655 -0.270655 -0.653258 -0.653258" rgba="0.815686 0.376471 0.121569 1" />
+            <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper1" pos="9.1454e-07 0.032 -0.0750005" quat="0.270655 -0.270655 -0.653258 -0.653258" rgba="0.815686 0.376471 0.121569 1" />
+            <geom class="visual" type="mesh" mesh="robot_model-SKF-_schr_g_SKF3203_A_1__Solid1_2" pos="9.14541e-07 -6.46628e-09 -0.0105005" quat="-6.91719e-12 0 1 4.25193e-12" rgba="0.541176 0.560784 0.580392 1" />
+            <body name="left_forearm_link" pos="0 -0.027 -0.075" quat="0 0 -0.707107 0.707107">
+              <inertial pos="-1.08685e-06 0.0811441 -0.0233385" quat="0.721652 0.692256 1.80259e-05 -2.50141e-05" mass="0.426373" diaginertia="0.00354969 0.00334292 0.000314475" />
+              <joint name="left_elbow" pos="0 0 0" axis="0 0 1" range="-1.885 0" actuatorfrcrange="-7 7" armature="0.01349" />
+              <geom class="collision" name="left_forearm_link_collision" type="capsule" size="0.0217231 0.137277" pos="-0.000108609 0.141422 -0.016066" quat="0.524228 0.474536 -0.47381 0.524885" />
+              <geom class="visual" type="mesh" mesh="robot_model-Lower_arm_halter2_1__Volumenk_rper1" pos="-0.0230009 0.0230005 -0.0615" quat="-2.68258e-12 -0.707107 -0.707107 3.33178e-12" rgba="0.784314 0.8 0.815686 1" />
+              <geom class="visual" type="mesh" mesh="robot_model-Lower_arm_halter_1__Volumenk_rper1" pos="0.0229991 0.0230005 0.00750001" quat="0.707107 -2.68206e-12 3.33122e-12 0.707107" rgba="0.784314 0.8 0.815686 1" />
+              <geom class="visual" type="mesh" mesh="robot_model-Stumpf2_1__Volumenk_rper1" pos="0.0229991 0.0230005 -0.0615" quat="4.56784e-12 5.21738e-12 0.707107 0.707107" rgba="0.909804 0.886275 0.815686 1" />
+              <geom class="visual" type="mesh" mesh="robot_model-RMD-X2-7_1__Volumenk_rper3" pos="-9.1454e-07 4.79013e-07 -0.059" quat="4.10426e-12 0.923846 -0.382764 1.20375e-12" rgba="0.815686 0.376471 0.121569 1" />
             </body>
           </body>
         </body>
@@ -470,16 +478,16 @@
     <motor name="left_knee" joint="left_knee" ctrlrange="-34 34" ctrllimited="true" />
     <motor name="left_ankle_pitch" joint="left_ankle_pitch" ctrlrange="-14 14" ctrllimited="true" />
     <motor name="left_ankle_roll" joint="left_ankle_roll" ctrlrange="-9.45 9.45" ctrllimited="true" />
-    <motor name="left_shoulder_pitch" joint="left_shoulder_pitch" ctrlrange="-34 34" ctrllimited="true" />
-    <motor name="left_shoulder_roll" joint="left_shoulder_roll" ctrlrange="-7 7" ctrllimited="true" />
-    <motor name="left_shoulder_yaw" joint="left_shoulder_yaw" ctrlrange="-7 7" ctrllimited="true" />
-    <motor name="left_elbow" joint="left_elbow" ctrlrange="-7 7" ctrllimited="true" />
     <motor name="right_hip_pitch" joint="right_hip_pitch" ctrlrange="-34 34" ctrllimited="true" />
     <motor name="right_hip_roll" joint="right_hip_roll" ctrlrange="-34 34" ctrllimited="true" />
     <motor name="right_hip_yaw" joint="right_hip_yaw" ctrlrange="-34 34" ctrllimited="true" />
     <motor name="right_knee" joint="right_knee" ctrlrange="-34 34" ctrllimited="true" />
     <motor name="right_ankle_pitch" joint="right_ankle_pitch" ctrlrange="-14 14" ctrllimited="true" />
     <motor name="right_ankle_roll" joint="right_ankle_roll" ctrlrange="-9.45 9.45" ctrllimited="true" />
+    <motor name="left_shoulder_pitch" joint="left_shoulder_pitch" ctrlrange="-34 34" ctrllimited="true" />
+    <motor name="left_shoulder_roll" joint="left_shoulder_roll" ctrlrange="-7 7" ctrllimited="true" />
+    <motor name="left_shoulder_yaw" joint="left_shoulder_yaw" ctrlrange="-7 7" ctrllimited="true" />
+    <motor name="left_elbow" joint="left_elbow" ctrlrange="-7 7" ctrllimited="true" />
     <motor name="right_shoulder_pitch" joint="right_shoulder_pitch" ctrlrange="-34 34" ctrllimited="true" />
     <motor name="right_shoulder_roll" joint="right_shoulder_roll" ctrlrange="-7 7" ctrllimited="true" />
     <motor name="right_shoulder_yaw" joint="right_shoulder_yaw" ctrlrange="-7 7" ctrllimited="true" />
