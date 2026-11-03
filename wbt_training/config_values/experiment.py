@@ -26,6 +26,7 @@ from holosoma.config_values.logger import wandb as wandb_logger
 from holosoma.config_values.wbt.g1.experiment import g1_29dof_wbt
 
 from wbt_training.config_values.lupus import lupus_loco
+from wbt_training.config_values.lupus_kick import build_lupus_kick_teacher
 from wbt_training.config_values.depth_distillation import (
     g1_29dof_wbt_terrain_distill_command,
     g1_29dof_wbt_terrain_distill_curriculum,
@@ -291,6 +292,14 @@ g1_wbt_terrain_warp_distill = replace(
 )
 
 
+# ---------------------------------------------------------------------------
+# LUPUS Phase 3: one walk-kick teacher on top of the PHP terrain teacher
+# (algo, simulator, logger, preprocess hook); robot, ball scene, kick command,
+# observations, rewards and DR come from wbt_training.config_values.lupus_kick.
+# ---------------------------------------------------------------------------
+lupus_kick_teacher = build_lupus_kick_teacher(g1_wbt_terrain_ref)
+
+
 DEFAULTS = {
     # Terrain preset for dense WBT with on-path obstacle injection
     "g1_wbt_terrain_ref": g1_wbt_terrain_ref,
@@ -308,6 +317,8 @@ DEFAULTS = {
     "g1_wbt_terrain_warp_distill_finetune": g1_wbt_terrain_warp_distill_finetune,
     # LUPUS Phase 0: plain velocity-tracking policy to validate the robot model.
     "lupus_loco": lupus_loco,
+    # LUPUS Phase 3: walk-kick teacher with ball, head scan and ball rewards.
+    "lupus_kick_teacher": lupus_kick_teacher,
 }
 
 AnnotatedExperimentConfig = Annotated[

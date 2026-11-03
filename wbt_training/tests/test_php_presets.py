@@ -162,7 +162,7 @@ def test_converter_works_with_only_numpy(tmp_path):
 
 
 # LUPUS presets live in wbt_training/config_values/lupus.py (tests in test_lupus_config.py).
-LUPUS_PRESETS = ("lupus_loco",)
+LUPUS_PRESETS = ("lupus_loco", "lupus_kick_teacher")
 
 
 def test_registry_contains_the_eight_php_presets_and_lupus():
