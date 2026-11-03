@@ -125,3 +125,38 @@ def test_lupus_loco_env_stands_in_mujoco_and_ignores_neck_actions():
     assert dones == []
     assert env.simulator.robot_root_states[0, 2].item() > 0.53
     assert env.simulator.dof_pos[0, -2:].abs().max().item() < 0.05
+
+
+def test_lupus_tracking_npz_converts_and_loads_by_name(tmp_path):
+    """motion_matching qpos_to_tracking(robot="lupus") layout -> motion_convert -> holosoma MotionLoader."""
+    import numpy as np
+    from holosoma.managers.command.terms.wbt import MotionLoader
+
+    from wbt_training.training_runs.motion_convert import convert
+
+    T, nb = 3, len(L.BODY_NAMES)
+    joint_pos = np.arange(T * 22, dtype=float).reshape(T, 22) * 1e-3
+    body_pos = np.arange(T * nb * 3, dtype=float).reshape(T, nb, 3)
+    source, target = tmp_path / "lupus_tracking.npz", tmp_path / "lupus_holosoma.npz"
+    np.savez(
+        source,
+        fps=np.array([50]),
+        joint_pos=joint_pos,
+        joint_vel=joint_pos + 1.0,
+        body_pos_w=body_pos,
+        body_quat_w=np.tile([1.0, 0.0, 0.0, 0.0], (T, nb, 1)),
+        body_lin_vel_w=np.zeros((T, nb, 3)),
+        body_ang_vel_w=np.zeros((T, nb, 3)),
+        joint_names=np.array(L.DOF_NAMES),
+        body_names=np.array(L.BODY_NAMES),
+    )
+    assert convert(str(source), str(target))
+    with np.load(target, allow_pickle=False) as data:
+        assert data["joint_pos"].shape == (T, 7 + 22)
+        assert data["joint_vel"].shape == (T, 6 + 22)
+        np.testing.assert_array_equal(data["joint_pos"][:, :3], body_pos[:, 0])
+        np.testing.assert_array_equal(data["joint_pos"][:, 7:], joint_pos)
+
+    motion = MotionLoader(str(target), L.BODY_NAMES, L.DOF_NAMES)
+    np.testing.assert_allclose(motion._joint_pos.numpy(), joint_pos, rtol=1e-6)
+    assert motion._body_indexes.tolist() == list(range(nb))

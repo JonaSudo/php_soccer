@@ -88,6 +88,10 @@ python -m wbt_training.sim2sim.lupus_sim2sim --onnx ... --vx 0.5 --viewer       
 
 Ausgabe: mittlere Geschwindigkeit vx/vy/ωz im Basisrahmen, Sturz und Zeitpunkt, größtes Verhältnis Moment/Limit, Wegstrecke.
 
+## Motion-Export für das Tracking-Training
+
+`qpos_to_tracking(qpos, fps, robot="lupus")` und `save_motion_npz(..., robot="lupus")` rechnen die Vorwärtskinematik mit `lupus.xml`. Eingang ist das Motion-Matching-qpos `[root_quat_wxyz, root_pos, 22 DoF in RobotSpec-Reihenfolge]`. Ausgabe: Gelenke und alle 25 Bodies in MJCF-Reihenfolge (= `DOF_NAMES`/`BODY_NAMES` der Holosoma-Config), dazu `joint_names` und `body_names` im npz. `wbt_training/training_runs/motion_convert.py` erkennt die Namen und ergänzt nur die Root-DoFs; G1 bleibt unverändert.
+
 ## Geprüft
 
 - `lupus.xml` in MuJoCo: 19,5 kg, Schwerpunkt 0,3 cm vor den Sprunggelenken und mittig. Mit PD-Haltung (kp 100 an Beinen) steht LUPUS 4 s in der Nullpose, nur die Füße berühren den Boden; eine Kniebeuge (Knie 1,0 rad) hält mit ca. 13 N·m pro Knie.
