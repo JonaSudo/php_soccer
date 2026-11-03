@@ -6,12 +6,14 @@ Simulationsmodell für LUPUS, erzeugt aus dem CAD-Export (`source/robot_model.ur
 # Meshes aus dem CAD-Export verlinken (nicht im Git, ~70 MB STL)
 ln -s /pfad/zu/urdf_export robots/lupus/meshes
 python robots/lupus/build_urdf.py
+python robots/lupus/build_mjcf.py   # braucht mujoco (aus motion_matching)
 ```
 
 Ausgabe:
 
-- `lupus.urdf`: echte Motorlimits, Halsgelenke, korrigierte Massen; Meshes unter `meshes/`
+- `lupus.urdf`: echte Motorlimits, Halsgelenke, korrigierte Massen, vereinfachte Kollisionen, Basis auf Beckenhöhe; Meshes unter `meshes/`
 - `lupus_joints.yaml`: Limits, Drehmoment, Geschwindigkeit und **Armature** pro Gelenk. URDF kennt keine Armature, deshalb kommt sie von hier in die Holosoma-Robot-Config (`dof_armature_list`) und ins MJCF.
+- `lupus.xml`: MJCF für MuJoCo-Sim2Sim, aufgebaut wie Holosomas `data/robots/t1/t1_29dof.xml` (Freejoint, Armature, ein Drehmoment-Motor pro Gelenk mit ±Spitzenmoment, Boden). Ein Körper pro beweglichem Gelenk (23 + Welt), CAD-Meshes nur als Visual.
 
 Änderungen immer in `hardware.yaml` machen und neu bauen, nie in `lupus.urdf`.
 
@@ -49,10 +51,18 @@ grep -n "k1_reference\|estimate" robots/lupus/hardware.yaml
 
 **Gelenklimits.** Hüfte roll und Sprunggelenk stammen aus dem CAD. Hüfte pitch/yaw, Knie, Schulter pitch/roll und Ellenbogen kommen vom K1 (Schulter roll um die 1,3 rad verschoben, weil der K1 in der Nullpose die Arme anhebt). Schulter yaw hat der K1 nicht, sie bleibt geschätzt (±1,57). Vorzeichen per Vorwärtskinematik geprüft: Hüfte/Schulter pitch negativ = nach vorn, Knie positiv = beugen, Ellenbogen negativ = beugen, Sprunggelenk pitch positiv = Spitze runter.
 
+**Basisrahmen.** Im CAD-Export liegt `base_link` auf dem Boden zwischen den Füßen. Holosoma, Motion Matching und die Retargeter erwarten die Wurzel im Becken (wie G1 `pelvis`, K1 `Trunk`). `base_frame.origin: hip_pitch_midpoint` schiebt `base_link` deshalb auf die Mitte der beiden Hüft-Pitch-Achsen (0,5745 m über der Sohle). Alle `*_base`-Koordinaten in `hardware.yaml` bleiben im CAD-Rahmen.
+
+**Kollisionen.** Statt 187 CAD-Meshes gibt es jetzt eine Form pro starrem Segment (`collision` in `hardware.yaml`): Die Füße sind Boxen in Größe der Sohlenplatte (`footlow`, 0,30 × 0,11 × 0,03 m), weil sie Boden- und Ballkontakt tragen; der Rumpf ist eine Box; alle anderen Segmente sind Zylinder entlang ihrer Hauptachse (im MJCF Kapseln gleicher Länge), deren Radius 90 % der Mesh-Punkte umschließt. Hals und Kopf behalten ihre Boxen. Im MJCF kollidiert der Roboter nicht mit sich selbst, nur mit Boden und Objekten (Ball). `collision.mode: mesh` stellt die CAD-Meshes wieder her.
+
+**MJCF.** `build_mjcf.py` verschmilzt die festen Links selbst (Trägheiten per Steiner), weil MuJocos `fusestatic` die Schwerpunkte bei diesem URDF falsch setzt (MuJoCo 3.8: Rumpf-Schwerpunkt 26 cm vor dem Becken). Der Spawn liegt so, dass die Sohlen den Boden berühren.
+
 ## Geprüft
 
-- MuJoCo 3.x lädt `lupus.urdf`; mit freier Basis und PD-Haltung steht LUPUS 4 s stabil in der Nullpose und hält bei 19,5 kg eine Kniebeuge (Knie 1,2 rad, ca. 10,6 N·m pro Knie, Grenze 34 N·m).
-- `tests/test_lupus_model.py`: keine Platzhalter-Limits mehr, URDF und Gelenktabelle passen zusammen, Trägheitsberechnung stimmt am Einheitswürfel.
+- `lupus.xml` in MuJoCo: 19,5 kg, Schwerpunkt 0,3 cm vor den Sprunggelenken und mittig. Mit PD-Haltung (kp 100 an Beinen) steht LUPUS 4 s in der Nullpose, nur die Füße berühren den Boden; eine Kniebeuge (Knie 1,0 rad) hält mit ca. 13 N·m pro Knie.
+- **Hinweis für die PD-Gains:** Die Steifigkeit im Sprunggelenk muss über m·g·h ≈ 50 N·m/rad pro Fuß liegen, sonst kippt LUPUS als umgekehrtes Pendel langsam nach vorn (mit kp 40 am Sprunggelenk passiert das nach etwa 2 s).
+- `tests/test_lupus_model.py`: keine Platzhalter-Limits mehr, URDF und Gelenktabelle passen zusammen, Trägheitsberechnung stimmt am Einheitswürfel, nur primitive Kollisionen mit echter Sohlengröße, Basis auf Hüft-Pitch-Mitte, MJCF-Masse/Schwerpunkt und 2 s Stehen (nur mit Meshes).
+- Motion Matching: `RobotSpec` `lupus` (`motion_matching/tests/test_robot_spec.py`): Bone-Modell = URDF-Vorwärtskinematik, Spiegelregeln spiegeln die Pose exakt, Limits links/rechts spiegelsymmetrisch.
 
 ## Offene Fragen
 

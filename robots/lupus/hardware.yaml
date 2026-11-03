@@ -127,3 +127,23 @@ mass_target:
   total: 19.5
   method: scale
   source: Booster K1 reference, not weighed
+
+# Collision geometry. The CAD export has 187 collision meshes; contacts with
+# them are slow and noisy. `primitives` replaces them with one shape per rigid
+# segment (child link of a movable joint): links in `boxes` get the box
+# around their meshes (value: only meshes whose file name contains it, null =
+# all; feet use the sole plate "footlow" = real sole and ball-contact size,
+# 0.30 x 0.11 x 0.03 m), all others a
+# cylinder along their main axis whose radius covers `radius_quantile` of the
+# mesh vertices (capsule in the MJCF). `mesh` keeps the CAD meshes.
+collision:
+  mode: primitives
+  boxes: {base_link: null, left_foot_link: footlow_, right_foot_link: footlow_}
+  radius_quantile: 0.9
+
+# Base frame. The CAD origin lies on the ground between the feet; holosoma,
+# motion matching and the retargeters expect the root link at the pelvis (like
+# G1 pelvis / K1 Trunk). `origin`: hip_pitch_midpoint or [x, y, z] in the CAD
+# base frame. All *_base coordinates above stay in the CAD frame.
+base_frame:
+  origin: hip_pitch_midpoint

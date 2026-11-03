@@ -20,6 +20,12 @@ DATABASE_DIR: Path = Path(
 G1_URDF: str = str(ROBOTS_DIR / "unitree_description" / "urdf" / "g1" / "main_mesh_collision_halfspherehand.urdf")
 G1_MJCF: str = str(ROBOTS_DIR / "unitree_description" / "mjcf" / "g1.xml")
 
+# LUPUS lives in the repository (robots/lupus, built by build_urdf.py), not in
+# the package. LUPUS_DIR overrides the location, e.g. for an installed wheel.
+LUPUS_DIR: Path = Path(os.environ.get("LUPUS_DIR", PKG_ROOT.parents[1] / "robots" / "lupus")).expanduser().resolve()
+LUPUS_URDF: str = str(LUPUS_DIR / "lupus.urdf")
+LUPUS_MJCF: str = str(LUPUS_DIR / "lupus.xml")
+
 
 def db_path(relative: str) -> str:
     """Resolve a path beneath ``PHP_MOTION_DATABASE_DIR`` (the database cache)."""

@@ -36,7 +36,7 @@ from typing import Literal
 
 import numpy as np
 
-from motion_matching.utils import G1_MJCF, G1_URDF
+from motion_matching.utils import G1_MJCF, G1_URDF, LUPUS_MJCF, LUPUS_URDF
 
 # Bone indices fixed by the database layout (see module docstring).
 BONE_SIMULATION = 0
@@ -251,7 +251,37 @@ G1_SPEC = RobotSpec(
     joint_axes_frame="local",
 )
 
-ROBOT_SPECS: dict[str, RobotSpec] = {G1_SPEC.name: G1_SPEC}
+# LUPUS (robots/lupus). The CAD export gives every joint axis as local +z with
+# rotated joint origins, so the axes must be taken in the base frame at the
+# zero pose. In that frame left and right joints share the same axis (pitch +y,
+# roll +x, yaw +z), so mirroring across the x-z plane flips every roll and yaw
+# joint and keeps pitch, knee and elbow. The neck (head_yaw/head_pitch) is part
+# of the skeleton (it moves the head mass) but not of the policy action space.
+LUPUS_SPEC = RobotSpec(
+    name="lupus",
+    urdf_path=LUPUS_URDF,
+    mjcf_path=LUPUS_MJCF,
+    num_dofs=22,
+    left_foot_joint="left_ankle_roll",
+    right_foot_joint="right_ankle_roll",
+    sim_position_joints=("left_shoulder_pitch", "right_shoulder_pitch"),
+    mirror_negate_joints=(
+        "left_hip_roll",
+        "right_hip_roll",
+        "left_hip_yaw",
+        "right_hip_yaw",
+        "left_ankle_roll",
+        "right_ankle_roll",
+        "left_shoulder_roll",
+        "right_shoulder_roll",
+        "left_shoulder_yaw",
+        "right_shoulder_yaw",
+        "head_yaw",
+    ),
+    joint_axes_frame="zero_pose",
+)
+
+ROBOT_SPECS: dict[str, RobotSpec] = {G1_SPEC.name: G1_SPEC, LUPUS_SPEC.name: LUPUS_SPEC}
 DEFAULT_ROBOT = G1_SPEC.name
 
 

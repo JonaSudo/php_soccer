@@ -204,3 +204,90 @@ def test_zero_pose_axes_reproduce_urdf_fk(tmp_path) -> None:
     # bone frame = link frame * inverse(link frame at zero pose)
     expected = quat.mul(urot, quat.inv(zero_rot))
     np.testing.assert_allclose(np.abs(np.sum(grot * expected, axis=-1)), 1.0, atol=1e-9)
+
+
+# ---------------------------------------------------------------------------- LUPUS
+
+
+def _db_fk(skel, q):
+    """Database-style FK (base-aligned bone frames) for joint angles ``q``."""
+    from motion_matching.kinematics import quat
+
+    n = len(q)
+    lrot = quat.from_angle_axis(q, skel.joint_axes.astype(np.float64))
+    grot = np.zeros((n, 4))
+    gpos = np.zeros((n, 3))
+    for i in range(n):
+        p = skel.joint_parents[i]
+        if p == -1:
+            grot[i], gpos[i] = lrot[i], skel.joint_bone_vectors[i]
+        else:
+            grot[i] = quat.mul(grot[p], lrot[i])
+            gpos[i] = gpos[p] + quat.mul_vec(grot[p], skel.joint_bone_vectors[i])
+    return gpos
+
+
+def _lupus_random_q(spec, seed):
+    kin = spec.make_kinematics()
+    rng = np.random.default_rng(seed)
+    lo = np.array([kin.urdf.joint_map[n].limit.lower for n in spec.joint_names])
+    hi = np.array([kin.urdf.joint_map[n].limit.upper for n in spec.joint_names])
+    return kin, rng.uniform(lo, hi)
+
+
+def test_lupus_registered() -> None:
+    from motion_matching.kinematics.robot_spec import LUPUS_SPEC
+
+    spec = get_robot_spec("lupus")
+    assert spec is LUPUS_SPEC
+    assert spec.num_dofs == 22 and spec.qpos_dim == 29 and spec.num_bones == 24
+    assert spec.joint_axes_frame == "zero_pose"
+    names = spec.joint_names
+    for n in spec.mirror_negate_joints + spec.sim_position_joints + (spec.left_foot_joint, spec.right_foot_joint):
+        assert n in names
+    assert spec.bone_left_foot != spec.bone_right_foot
+    # every axis is a base axis after the zero-pose rotation (CAD joints are axis-aligned)
+    axes = spec.joint_axes
+    np.testing.assert_allclose(np.abs(axes).max(axis=1), 1.0, atol=1e-6)
+    np.testing.assert_allclose(np.linalg.norm(axes, axis=1), 1.0, atol=1e-6)
+
+
+def test_lupus_bone_model_matches_urdf_fk() -> None:
+    spec = get_robot_spec("lupus")
+    kin, q = _lupus_random_q(spec, 3)
+    upos, _ = kin.compute_joint_poses(np.zeros(3), np.array([1.0, 0, 0, 0]), q)
+    np.testing.assert_allclose(_db_fk(spec.skeleton, q), upos, atol=1e-9)
+
+
+def test_lupus_mirror_rules_mirror_the_pose() -> None:
+    """Mirroring the joint angles must mirror every joint position across the x-z plane."""
+    from motion_matching.utils.data_utils import animation_mirror_xz
+
+    spec = get_robot_spec("lupus")
+    kin, q = _lupus_random_q(spec, 4)
+    names = spec.joint_names
+    dof_m, _, _ = animation_mirror_xz(
+        q[None].copy(), np.zeros((1, 3)), np.array([[1.0, 0, 0, 0]]), names,
+        neg_joints=spec.mirror_negate_joints, left_prefix=spec.left_prefix, right_prefix=spec.right_prefix,
+    )
+    root = (np.zeros(3), np.array([1.0, 0, 0, 0]))
+    pos, _ = kin.compute_joint_poses(*root, q)
+    pos_m, _ = kin.compute_joint_poses(*root, dof_m[0])
+    partner = [
+        names.index(n.replace("left_", "right_", 1) if n.startswith("left_") else n.replace("right_", "left_", 1))
+        for n in names
+    ]
+    expected = pos[partner] * np.array([1.0, -1.0, 1.0])
+    np.testing.assert_allclose(pos_m, expected, atol=1e-6)
+
+
+def test_lupus_limits_are_mirror_symmetric() -> None:
+    spec = get_robot_spec("lupus")
+    kin = spec.make_kinematics()
+    lim = {n: (kin.urdf.joint_map[n].limit.lower, kin.urdf.joint_map[n].limit.upper) for n in spec.joint_names}
+    for n in spec.joint_names:
+        if not n.startswith("left_"):
+            continue
+        lo, hi = lim[n.replace("left_", "right_", 1)]
+        expected = (-hi, -lo) if n in spec.mirror_negate_joints else (lo, hi)
+        assert lim[n] == pytest.approx(expected), n

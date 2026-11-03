@@ -111,3 +111,10 @@ Use `joint_axes_frame="zero_pose"` for URDFs whose joint origins carry a
 rotation (`rpy`), such as CAD exports where every axis is `0 0 1`. G1 uses
 `"local"`, which ignores the origin rotation and is what its released
 databases were built with.
+
+`lupus` (`LUPUS_SPEC`) is registered too: 22 DoF (12 leg, 8 arm, 2 neck) from
+`robots/lupus/lupus.urdf` in the repository (override the folder with the
+`LUPUS_DIR` environment variable), `zero_pose` axes, feet on the ankle-roll
+joints. In the base frame left and right joints share their axes, so mirroring
+flips all roll and yaw joints (including `head_yaw`). There are no LUPUS
+databases yet; they follow once retargeted clips exist (Phase 1 of the plan).
