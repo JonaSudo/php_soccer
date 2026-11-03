@@ -45,6 +45,7 @@ from wbt_training.config_values.depth_distillation import (
 )
 from wbt_training.config_values.lupus_kick import (
     BALL_NAME,
+    BALL_RADIUS,
     LUPUS_END_EFFECTORS,
     lupus_kick_actor_obs,
     lupus_kick_critic_obs,
@@ -129,7 +130,7 @@ def lupus_kick_distill_observation(phase6_kick_dir: bool = False, phase6_dribble
         lupus_ball_student_actor_obs,
         terms={
             **lupus_ball_student_actor_obs.terms,
-            "ball_detection": replace(ball_detection_term, params={**ball_detection_term.params, "object_name": BALL_NAME}),
+            "ball_detection": replace(ball_detection_term, params={**ball_detection_term.params, "object_name": BALL_NAME, "ball_radius": BALL_RADIUS}),
         },
     )
     teacher = replace(lupus_kick_actor_obs, terms={**lupus_kick_actor_obs.terms, "which_motion": _which_motion_term()})

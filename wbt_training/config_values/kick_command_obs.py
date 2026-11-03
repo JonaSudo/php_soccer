@@ -19,6 +19,10 @@ noisy behavior stack, without ever changing the reference it tracks:
   behavior does not trigger a free kick (the trigger in the stand is the rising
   edge of a *sustained* ``kick_enable``).
 
+* **Jitter test** (Phase 5, eval only): ``params["jitter"]`` adds the
+  behavior-stack model of :mod:`wbt_training.utils.command_jitter` on top of the
+  reference command (set ``commit_replace_prob`` and ``flicker_prob`` to 0 then).
+
 Output layout (concatenated in this order):
 
 * ``mode="enable"`` (Phase 4): ``[v, omega, kick_enable]``
@@ -114,6 +118,18 @@ class StudentCommandObsTerm(ObservationTermBase):
         self.flicker_gap_steps = int(p.get("flicker_gap_steps", 10))
         self.since_flicker = torch.full((n,), self.flicker_gap_steps, dtype=torch.long, device=self.device)
         self._cached: torch.Tensor | None = None
+        # Phase-5 jitter test: behavior-stack noise on top of the reference.
+        self.jitter = None
+        # Either a dict under "jitter" or flat "jitter_<field>" keys with
+        # "jitter_enabled" (flat keys can be overridden from the CLI).
+        jitter_params = dict(p.get("jitter") or {})
+        if p.get("jitter_enabled"):
+            jitter_params.update({k[len("jitter_") :]: v for k, v in p.items() if k.startswith("jitter_") and k != "jitter_enabled"})
+        if p.get("jitter") or p.get("jitter_enabled"):
+            from wbt_training.utils.command_jitter import CommandJitter, CommandJitterCfg
+
+            jcfg = CommandJitterCfg.from_params({"dt": float(getattr(env, "dt", 0.02)), **jitter_params})
+            self.jitter = CommandJitter(n, jcfg, device=self.device, generator=self.generator)
 
     # ------------------------------------------------------------------ utils
 
@@ -135,6 +151,9 @@ class StudentCommandObsTerm(ObservationTermBase):
         self.commit_steps[env_ids] = 0
         self.flicker_left[env_ids] = 0
         self.since_flicker[env_ids] = self.flicker_gap_steps
+        if self.jitter is not None:
+            ids = None if isinstance(env_ids, slice) else env_ids
+            self.jitter.reset(ids)
 
     # ---------------------------------------------------------------- compute
 
@@ -161,6 +180,11 @@ class StudentCommandObsTerm(ObservationTermBase):
             return self._cached.clone()
         ref = self.reference(env)
         n = self.num_envs
+        if self.jitter is not None:
+            kick = (ref["kick_mode"] == KICK_MODE_KICK).float()
+            ref["vel"], kick_j = self.jitter.apply(ref["vel"], kick)
+            if self.mode == "enable":
+                ref["kick_mode"] = kick_j.round().long()
 
         # --- commit phase bookkeeping -----------------------------------
         commit_now = ref["kick_phase"] >= 1

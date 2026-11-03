@@ -69,4 +69,4 @@ Zwischen zwei Detektionen bleibt der letzte Wert stehen; `visible` gibt an, ob d
 - Rauschparameter und Latenz messen und in `BallVisionCfg` eintragen
 - Frame der echten Vision-Ausgabe klären (Torso oder Boden/Heading)
 - Command-Bereiche festlegen, sobald bekannt ist, was LUPUS schafft
-- GPU-Training und Abnahme (Student höchstens 5 Prozentpunkte unter dem Teacher, kein Kickabbruch bei verrauschtem Command): mit `eval_student.py` und den Kick-Metriken aus Phase 5
+- GPU-Training und Abnahme (Student höchstens 5 Prozentpunkte unter dem Teacher, kein Kickabbruch bei verrauschtem Command): mit `eval_student.py --kick-metrics.enabled True` und dem Jitter-Test, siehe [deploy/README.md](deploy/README.md)

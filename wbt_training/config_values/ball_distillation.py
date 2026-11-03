@@ -154,6 +154,15 @@ student_command_term = ObsTermCfg(
         "flicker_prob": 0.01,
         "flicker_max_steps": 2,
         "flicker_gap_steps": 10,
+        # Phase-5 jitter test (eval only), see utils/command_jitter.py
+        "jitter_enabled": False,
+        "jitter_sigma_v": 0.05,
+        "jitter_sigma_omega": 0.10,
+        "jitter_tau_s": 0.3,
+        "jitter_update_hz": 20.0,
+        "jitter_stale_prob": 0.05,
+        "jitter_kick_glitch_prob": 0.0,
+        "jitter_log_file": "",
     },
 )
 
