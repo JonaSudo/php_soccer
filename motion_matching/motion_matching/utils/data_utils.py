@@ -4,7 +4,7 @@ import argparse
 import json
 import os
 import sys
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
 
 import numpy as np
 from scipy.interpolate import griddata, interp1d
@@ -111,37 +111,38 @@ def adjust_vel_cmd_speed(vel_cmd: np.ndarray, speed_up_ratio: float) -> np.ndarr
 
 
 def animation_mirror_xz(
-    dof: np.ndarray, root_pos: np.ndarray, root_wxyz: np.ndarray, names: list
+    dof: np.ndarray,
+    root_pos: np.ndarray,
+    root_wxyz: np.ndarray,
+    names: list,
+    neg_joints: Optional[Sequence[str]] = None,
+    left_prefix: str = "left",
+    right_prefix: str = "right",
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Mirror a motion across the x-z plane.
+
+    Left/right joints are paired by name prefix and swapped; joints listed in
+    ``neg_joints`` flip sign. ``neg_joints`` defaults to the G1 set
+    (:attr:`G1_SPEC.mirror_negate_joints`); pass ``RobotSpec.mirror_negate_joints``
+    for other robots.
+    """
+    if neg_joints is None:
+        from motion_matching.kinematics.robot_spec import G1_SPEC
+
+        neg_joints = G1_SPEC.mirror_negate_joints
+
+    lp, rp = left_prefix, right_prefix
     joints_mirror = np.array(
         [
             (
-                names.index("left" + n[5:])
-                if n.startswith("right")
-                else (names.index("right" + n[4:]) if n.startswith("left") else names.index(n))
+                names.index(lp + n[len(rp) :])
+                if n.startswith(rp)
+                else (names.index(rp + n[len(lp) :]) if n.startswith(lp) else names.index(n))
             )
             for n in names
         ]
     )
 
-    neg_joints = [
-        "left_hip_roll_joint",
-        "right_hip_roll_joint",
-        "left_hip_yaw_joint",
-        "right_hip_yaw_joint",
-        "left_ankle_roll_joint",
-        "right_ankle_roll_joint",
-        "waist_yaw_joint",
-        "waist_roll_joint",
-        "left_shoulder_roll_joint",
-        "right_shoulder_roll_joint",
-        "left_shoulder_yaw_joint",
-        "right_shoulder_yaw_joint",
-        "left_wrist_roll_joint",
-        "right_wrist_roll_joint",
-        "left_wrist_yaw_joint",
-        "right_wrist_yaw_joint",
-    ]
     neg_indices = [names.index(n) for n in neg_joints]
 
     dof = dof[:, joints_mirror]

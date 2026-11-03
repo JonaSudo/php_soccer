@@ -26,14 +26,11 @@ from motion_matching.io import (
     sample_offpath_box_obstacles,
     save_motion_npz,
 )
-from motion_matching.metadata.constants import (
-    G1_BONE_LEFT_FOOT as bone_left_foot,
-)
-from motion_matching.metadata.constants import (
-    G1_BONE_RIGHT_FOOT as bone_right_foot,
-)
-from motion_matching.metadata.constants import (
-    G1_JOINT_AXES as joint_axes,
+from motion_matching.kinematics.robot_spec import (
+    DEFAULT_ROBOT,
+    ROBOT_SPECS,
+    RobotSpec,
+    get_robot_spec,
 )
 from motion_matching.metadata.constants import (
     NUM_TERRAIN_VARIANTS as num_terrain_variants,
@@ -110,6 +107,7 @@ def _load_db(
     terrains: Optional[list] = None,
     height_range: tuple = (0.0, 0.0),
     start_ground_fit_distance: Optional[float] = None,
+    robot: str | RobotSpec | None = None,
 ) -> MotionMatchingDatabase:
     """Load a MotionMatchingDatabase, build/load features, attach terrains.
 
@@ -127,7 +125,10 @@ def _load_db(
             passed to the DB constructor. Default ``(0.0, 0.0)``.
         start_ground_fit_distance: Optional override for the ground-fit start
             distance. Set to a positive float to delay ground fitting.
+        robot: Robot spec (or name) whose foot/hip bones drive the features.
+            Default G1.
     """
+    robot = get_robot_spec(robot)
     db = MotionMatchingDatabase(search_start_ground_height=height_range[0], search_end_ground_height=height_range[1])
     db.load_from_file(db_path(bin_name))
     if terrains:
@@ -136,9 +137,9 @@ def _load_db(
     feature_path = db_path(feature_name)
     if not os.path.exists(feature_path):
         db.build_motion_matching_features(
-            bone_left_foot=bone_left_foot,
-            bone_right_foot=bone_right_foot,
-            bone_hips=1,
+            bone_left_foot=robot.bone_left_foot,
+            bone_right_foot=robot.bone_right_foot,
+            bone_hips=robot.bone_hips,
             traj_axis1=0,
             traj_axis2=1,
             forward=np.array([1, 0, 0]),
@@ -155,6 +156,7 @@ def _load_db(
 
 def init_databases(
     required_skills: Optional[Any] = None,
+    robot: str | RobotSpec | None = None,
 ) -> tuple[MotionMatchingDatabase, dict[str, MotionMatchingDatabase], list[str]]:
     """Construct the locomotion DB and a configured set of traversal DBs.
 
@@ -165,6 +167,7 @@ def init_databases(
             (e.g. ``{"step", "step_up", "step_down"}``) for generate mode where
             only one scenario's skills are needed; the locomotion DB is always
             included.
+        robot: Robot spec (or name) the databases were built for. Default G1.
 
     Returns:
         (db, traversal_dbs, traversal_skills):
@@ -191,6 +194,7 @@ def init_databases(
             terrains=cfg.get("terrains", None),
             height_range=cfg.get("height_range", (0.0, 0.0)),
             start_ground_fit_distance=cfg.get("start_ground_fit_distance"),
+            robot=robot,
         )
         if skill_name == LOCOMOTION_KEY:
             locomotion_db = loaded
@@ -216,8 +220,16 @@ def collect_required_skills(scenarios: list[dict[str, Any]]) -> set[str]:
 
 
 class MotionMatchingSystem:
-    def __init__(self, required_skills: Optional[Any] = None) -> None:
-        self.db, self.traversal_dbs, self.traversal_skills = init_databases(required_skills)
+    def __init__(self, required_skills: Optional[Any] = None, robot: str | RobotSpec | None = None) -> None:
+        self.robot = get_robot_spec(robot)
+        self.bone_left_foot = self.robot.bone_left_foot
+        self.bone_right_foot = self.robot.bone_right_foot
+        self.db, self.traversal_dbs, self.traversal_skills = init_databases(required_skills, robot=self.robot)
+        if self.db.nbones() != self.robot.num_bones:
+            raise ValueError(
+                f"Locomotion database has {self.db.nbones()} bones, robot {self.robot.name!r} "
+                f"expects {self.robot.num_bones}"
+            )
 
         self.reset()
 
@@ -305,7 +317,7 @@ class MotionMatchingSystem:
         self.trajectory_angular_velocities = np.zeros((4, 3), dtype=np.float32)
 
         # Contact and Foot Locking data
-        self.contact_bones = np.array([bone_left_foot, bone_right_foot], dtype=np.int32)
+        self.contact_bones = np.array([self.bone_left_foot, self.bone_right_foot], dtype=np.int32)
         self.contact_states = np.zeros((2), dtype=np.bool)
         self.contact_locks = np.zeros((2), dtype=np.bool)
         self.contact_positions = np.zeros((2, 3), dtype=np.float32)
@@ -736,15 +748,15 @@ class MotionMatchingSystem:
             bone_angular_velocities=self.bone_angular_velocities,
             bone_parents=self.db.bone_parents,
         )
-        if float(np.linalg.norm(global_velocities[bone_left_foot])) >= STOP_FOOT_SPEED_EPS:
+        if float(np.linalg.norm(global_velocities[self.bone_left_foot])) >= STOP_FOOT_SPEED_EPS:
             return False
-        if float(np.linalg.norm(global_velocities[bone_right_foot])) >= STOP_FOOT_SPEED_EPS:
+        if float(np.linalg.norm(global_velocities[self.bone_right_foot])) >= STOP_FOOT_SPEED_EPS:
             return False
 
         root_position = self.bone_positions[0]
         root_rotation = self.bone_rotations[0]
-        left = math.quat_inv_mul_vec3(root_rotation, global_positions[bone_left_foot] - root_position)
-        right = math.quat_inv_mul_vec3(root_rotation, global_positions[bone_right_foot] - root_position)
+        left = math.quat_inv_mul_vec3(root_rotation, global_positions[self.bone_left_foot] - root_position)
+        right = math.quat_inv_mul_vec3(root_rotation, global_positions[self.bone_right_foot] - root_position)
         if abs(float(left[0] - right[0])) >= STOP_STANCE_DX_EPS:
             return False
         if abs(float(left[1] + right[1])) >= STOP_STANCE_DY_EPS:
@@ -899,7 +911,7 @@ class MotionMatchingSystem:
             n_contacts = int(l_contact) + int(r_contact)
 
             if n_contacts == 1:
-                support_bone = bone_left_foot if l_contact else bone_right_foot
+                support_bone = self.bone_left_foot if l_contact else self.bone_right_foot
                 snapped = self._anchor_prev_frame_idx >= 0 and abs(self.frame_idx - self._anchor_prev_frame_idx) > 1
 
                 # FK on the *uncorrected* root (before offset is added). The
@@ -934,7 +946,7 @@ class MotionMatchingSystem:
                 now = time.time()
                 if now - self._anchor_last_log > 1.0:
                     # print(
-                    #     f"[anchor] foot={'L' if support_bone == bone_left_foot else 'R'} "
+                    #     f"[anchor] foot={'L' if support_bone == self.bone_left_foot else 'R'} "
                     #     f"max|offset|={self._anchor_max_dxy:.4f} m"
                     # )
                     self._anchor_last_log = now
@@ -1200,9 +1212,7 @@ def generate_segment(
         bone_positions, bone_rotations = sys.step(dt, inputs)
 
         # Capture qpos
-        dof_rotations = bone_rotations[-29:]
-        dof_aa = math.quat_to_scaled_angle_axis(dof_rotations)
-        dof = np.sum(dof_aa * joint_axes, axis=-1)
+        dof = sys.robot.dof_from_bone_rotations(bone_rotations)
 
         global_positions, global_rotations = forward_kinematics(
             bone_positions=bone_positions,
@@ -1270,9 +1280,7 @@ def generate_skill_sequence(
     bone_positions, bone_rotations = sys.step(dt, inputs)
 
     def capture_frame(b_pos: np.ndarray, b_rot: np.ndarray) -> None:
-        dof_rotations = b_rot[-29:]
-        dof_aa = math.quat_to_scaled_angle_axis(dof_rotations)
-        dof = np.sum(dof_aa * joint_axes, axis=-1)
+        dof = sys.robot.dof_from_bone_rotations(b_rot)
 
         global_positions, global_rotations = forward_kinematics(
             bone_positions=b_pos, bone_rotations=b_rot, bone_parents=sys.db.bone_parents, return_rotations=True
@@ -1313,9 +1321,10 @@ _worker_sys = None
 # Set by run_generation BEFORE the pool is constructed so spawned workers
 # inherit the value via module-import (workers re-import this module on spawn).
 _worker_required_skills = None
+_worker_robot: str | RobotSpec | None = None
 
 
-def init_worker(required_skills: Optional[Any] = None) -> None:
+def init_worker(required_skills: Optional[Any] = None, robot: str | RobotSpec | None = None) -> None:
     """Pool initializer: build the per-worker :class:`MotionMatchingSystem`.
 
     Args:
@@ -1324,12 +1333,15 @@ def init_worker(required_skills: Optional[Any] = None) -> None:
             startup time when a scenario only needs a few skills. Defaults to
             ``_worker_required_skills`` if unset (so the pool dispatcher can
             stash the value before creating the pool).
+        robot: Robot spec or name (default: ``_worker_robot``, i.e. G1).
     """
     global _worker_sys
     if required_skills is None:
         required_skills = _worker_required_skills
+    if robot is None:
+        robot = _worker_robot
     try:
-        _worker_sys = MotionMatchingSystem(required_skills=required_skills)
+        _worker_sys = MotionMatchingSystem(required_skills=required_skills, robot=robot)
     except Exception as e:
         print(f"Error initializing worker: {e}")
         raise e
@@ -1510,7 +1522,7 @@ def run_generation(args: argparse.Namespace) -> None:
 
     if num_jobs <= 1:
         print(f"Running in-process ({len(tasks)} task(s), no pool overhead).")
-        init_worker(required_skills=required_skills)  # populates module-level _worker_sys
+        init_worker(required_skills=required_skills, robot=args.robot)  # populates module-level _worker_sys
         for task in tasks:
             process_scenario(*task)
     else:
@@ -1518,7 +1530,7 @@ def run_generation(args: argparse.Namespace) -> None:
         # Use spawn context for safety with libraries like numpy/viser/trimesh
         # that hold internal locks; fork would be faster but unsafe on macOS.
         ctx = multiprocessing.get_context("spawn")
-        with ctx.Pool(processes=num_jobs, initializer=init_worker, initargs=(required_skills,)) as pool:
+        with ctx.Pool(processes=num_jobs, initializer=init_worker, initargs=(required_skills, args.robot)) as pool:
             pool.starmap(process_scenario, tasks)
 
     print("Generation complete.")
@@ -1532,9 +1544,10 @@ def run_interactive(args: argparse.Namespace) -> None:
         keyboard_skills_mapping,
         speed_modifier_keys,
     )
-    from motion_matching.viz import add_world_scene_with_g1
+    from motion_matching.viz import add_world_scene_with_robot
 
-    sys = MotionMatchingSystem()
+    sys = MotionMatchingSystem(robot=args.robot)
+    robot = sys.robot
 
     sys.reset()
 
@@ -1612,9 +1625,9 @@ def run_interactive(args: argparse.Namespace) -> None:
         end_recording = server.gui.add_button("End Recording")
         recording_status = server.gui.add_text("Recording: OFF", initial_value="Recording: OFF")
 
-    # World origin + grid + robot-root frame + G1 URDF visualizer.
-    root_frame, viser_urdf = add_world_scene_with_g1(server)
-    print("Loaded G1 URDF for visualization")
+    # World origin + grid + robot-root frame + robot URDF visualizer.
+    root_frame, viser_urdf = add_world_scene_with_robot(server, robot)
+    print(f"Loaded {robot.name} URDF for visualization")
 
     # Create file communication keyboard controller
     keyboard = FileKeyboardController()
@@ -1649,14 +1662,14 @@ def run_interactive(args: argparse.Namespace) -> None:
 
     # Recording state
     is_recording = False
-    recorded_frames = []  # List to store recorded data: [root_rot (4), root_pos (3), dof (29)]
+    recorded_frames = []  # List to store recorded data: [root_rot (4), root_pos (3), dof (num_dofs)]
     terrain_meshes = {}  # Dictionary to store terrain meshes: {name: (mesh, position, rotation)}
 
     # Last printed contact label, so we only log on change.
     prev_contact_label = None
 
     # Initialize URDF with zero DOF (initial pose)
-    initial_dof = np.zeros(29, dtype=np.float32)
+    initial_dof = np.zeros(robot.num_dofs, dtype=np.float32)
     viser_urdf.update_cfg(initial_dof)
 
     @reset_pose_button.on_click
@@ -1714,7 +1727,7 @@ def run_interactive(args: argparse.Namespace) -> None:
                 folder_name = f"motion_matching_results/mm{timestamp[:8]}/motion_{timestamp}"
                 os.makedirs(folder_name, exist_ok=True)
 
-                # Convert to numpy array: (N, 36) where N is number of frames
+                # Convert to numpy array: (N, robot.qpos_dim) where N is number of frames
                 recorded_data = np.array(recorded_frames, dtype=np.float32)
 
                 required_fps = 50
@@ -1860,7 +1873,7 @@ def run_interactive(args: argparse.Namespace) -> None:
             prev_contact_label = contact_label
 
         anchor_foot_text.value = (
-            "L" if sys._anchor_foot == bone_left_foot else "R" if sys._anchor_foot == bone_right_foot else "-"
+            "L" if sys._anchor_foot == sys.bone_left_foot else "R" if sys._anchor_foot == sys.bone_right_foot else "-"
         )
 
         if mode.value == "MotionMatching":
@@ -1919,11 +1932,7 @@ def run_interactive(args: argparse.Namespace) -> None:
         # Draw skeleton using URDF meshes, default not visible
         try:
             # Translate final_bone_rotations to dof
-            dof_rotations = final_bone_rotations[-29:]
-            # assert dof_rotations.shape[0] == len(joint_axes)
-
-            dof_aa = math.quat_to_scaled_angle_axis(dof_rotations)
-            dof = np.sum(dof_aa * joint_axes, axis=-1)
+            dof = robot.dof_from_bone_rotations(final_bone_rotations)
 
             global_positions, global_rotations = forward_kinematics(
                 bone_positions=final_bone_positions,
@@ -1943,8 +1952,8 @@ def run_interactive(args: argparse.Namespace) -> None:
             BLUE = np.array([0, 100, 255])
             markers_visible = show_contact_markers.value
             for side, in_contact, bone in (
-                ("left", bool(l_contact), bone_left_foot),
-                ("right", bool(r_contact), bone_right_foot),
+                ("left", bool(l_contact), sys.bone_left_foot),
+                ("right", bool(r_contact), sys.bone_right_foot),
             ):
                 node = f"/contact_marker/{side}"
                 if markers_visible and in_contact:
@@ -1959,7 +1968,7 @@ def run_interactive(args: argparse.Namespace) -> None:
 
             # Record motion data if recording is active
             if is_recording:
-                # Format: [root_rot (wxyz, 4), root_pos (xyz, 3), dof (29)] = 36 dims
+                # Format: [root_rot (wxyz, 4), root_pos (xyz, 3), dof (num_dofs)] = robot.qpos_dim dims
                 root_rot = global_rotations[1]  # wxyz quaternion
                 root_pos = global_positions[1]  # xyz position
                 frame_data = np.concatenate([root_rot, root_pos, dof], dtype=np.float32)
@@ -2055,6 +2064,9 @@ def main() -> None:
     parser.add_argument("--scenario", type=str, help="Name of the scenario function in motion_matching.scenarios")
     parser.add_argument("--force", action="store_true", help="Force overwrite existing generated files")
     parser.add_argument("--jobs", type=int, default=0, help="Number of parallel jobs (default: 0 = all CPUs)")
+    parser.add_argument(
+        "--robot", default=DEFAULT_ROBOT, choices=sorted(ROBOT_SPECS), help="Robot spec (default: g1)"
+    )
 
     args = parser.parse_args()
 

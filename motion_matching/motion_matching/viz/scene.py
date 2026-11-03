@@ -1,7 +1,7 @@
 """Shared Viser scene setup for the interactive viewers.
 
 ``run.py`` (interactive motion matching) and ``play_database.py`` (database
-playback) built the same world frame + grid + robot-root frame + G1 ``ViserUrdf``
+playback) built the same world frame + grid + robot-root frame + robot ``ViserUrdf``
 by hand. These helpers hold that boilerplate in one place. They only affect the
 interactive Viser scene; they produce no saved-file output.
 """
@@ -15,7 +15,7 @@ import numpy as np
 import viser
 from viser.extras import ViserUrdf
 
-from motion_matching.utils import G1_URDF
+from motion_matching.kinematics.robot_spec import RobotSpec, get_robot_spec
 
 
 def add_world_scene(server: viser.ViserServer) -> Any:
@@ -35,18 +35,35 @@ def add_world_scene(server: viser.ViserServer) -> Any:
     return server.scene.add_frame("/robot_root", show_axes=True)
 
 
-def load_g1_viser_urdf(server: viser.ViserServer) -> ViserUrdf:
-    """Attach the packaged G1 URDF to ``/robot_root`` for visualization."""
+def load_robot_viser_urdf(server: viser.ViserServer, robot: str | RobotSpec | None = None) -> ViserUrdf:
+    """Attach the robot's URDF (default: G1) to ``/robot_root`` for visualization."""
+    spec = get_robot_spec(robot)
     return ViserUrdf(
-        server, urdf_or_path=Path(G1_URDF), root_node_name="/robot_root", load_meshes=True, load_collision_meshes=False
+        server,
+        urdf_or_path=Path(spec.urdf_path),
+        root_node_name="/robot_root",
+        load_meshes=True,
+        load_collision_meshes=False,
     )
 
 
-def add_world_scene_with_g1(server: viser.ViserServer) -> Tuple[Any, ViserUrdf]:
-    """Convenience: :func:`add_world_scene` + :func:`load_g1_viser_urdf`.
+def add_world_scene_with_robot(
+    server: viser.ViserServer, robot: str | RobotSpec | None = None
+) -> Tuple[Any, ViserUrdf]:
+    """Convenience: :func:`add_world_scene` + :func:`load_robot_viser_urdf`.
 
     Returns ``(root_frame, viser_urdf)``.
     """
     root_frame = add_world_scene(server)
-    viser_urdf = load_g1_viser_urdf(server)
+    viser_urdf = load_robot_viser_urdf(server, robot)
     return root_frame, viser_urdf
+
+
+def load_g1_viser_urdf(server: viser.ViserServer) -> ViserUrdf:
+    """G1 shortcut for :func:`load_robot_viser_urdf`."""
+    return load_robot_viser_urdf(server, "g1")
+
+
+def add_world_scene_with_g1(server: viser.ViserServer) -> Tuple[Any, ViserUrdf]:
+    """G1 shortcut for :func:`add_world_scene_with_robot`."""
+    return add_world_scene_with_robot(server, "g1")
