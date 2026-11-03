@@ -5507,4 +5507,40 @@
     <axis xyz="0 1 0" />
     <limit lower="-0.314" upper="0.794" effort="6.0" velocity="7.85" />
   </joint>
+  <link name="left_foot_contact_point">
+    <inertial>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <mass value="0.001" />
+      <inertia ixx="1e-06" ixy="0.0" ixz="0.0" iyy="1e-06" iyz="0.0" izz="1e-06" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <sphere radius="0.0001" />
+      </geometry>
+    </visual>
+  </link>
+  <joint name="left_foot_contact_point" type="fixed" dont_collapse="true">
+    <parent link="left_foot_link" />
+    <child link="left_foot_contact_point" />
+    <origin xyz="5.579588163356201e-16 0.04500000000000009 0.04950000351161302" rpy="1.5707963267948963 -1.5707963267948966 0.0" />
+  </joint>
+  <link name="right_foot_contact_point">
+    <inertial>
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      <mass value="0.001" />
+      <inertia ixx="1e-06" ixy="0.0" ixz="0.0" iyy="1e-06" iyz="0.0" izz="1e-06" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <sphere radius="0.0001" />
+      </geometry>
+    </visual>
+  </link>
+  <joint name="right_foot_contact_point" type="fixed" dont_collapse="true">
+    <parent link="right_foot_link" />
+    <child link="right_foot_contact_point" />
+    <origin xyz="-1.2936555157589265e-08 0.04499999999999976 0.04950000351161109" rpy="1.5707963267948963 -1.5707963267948966 0.0" />
+  </joint>
 </robot>

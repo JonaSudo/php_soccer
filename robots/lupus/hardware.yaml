@@ -141,6 +141,10 @@ collision:
   boxes: {base_link: null, left_foot_link: footlow_, right_foot_link: footlow_}
   radius_quantile: 0.9
 
+# Fake bodies at the bottom center of each sole (holosoma `foot_height_name`,
+# like the T1's left/right_foot_contact_point). Needs collision boxes on the feet.
+foot_contact_points: [left_foot_link, right_foot_link]
+
 # Base frame. The CAD origin lies on the ground between the feet; holosoma,
 # motion matching and the retargeters expect the root link at the pelvis (like
 # G1 pelvis / K1 Trunk). `origin`: hip_pitch_midpoint or [x, y, z] in the CAD
