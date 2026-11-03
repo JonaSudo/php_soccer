@@ -58,6 +58,15 @@ def test_motor_derived_values():
     assert specs["left_ankle_roll"]["effort"] == pytest.approx(2 * 7.0 * ratio)
 
 
+def test_mass_target_matches_reference():
+    assert build_urdf.total_mass(URDF) == pytest.approx(HW["mass_target"]["total"], abs=1e-6)
+
+
+def test_every_joint_names_its_source():
+    for name, j in HW["joints"].items():
+        assert j["status"] in {"cad", "k1_reference", "estimate", "measured"}, name
+
+
 def test_mesh_inertia_of_unit_cube():
     corners = [(x, y, z) for x in (0, 1) for y in (0, 1) for z in (0, 1)]
     faces = [(0, 1, 3), (0, 3, 2), (4, 6, 7), (4, 7, 5), (0, 4, 5), (0, 5, 1),

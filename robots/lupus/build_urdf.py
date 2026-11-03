@@ -210,6 +210,40 @@ def add_neck(robot: ET.Element, neck: dict, specs: dict) -> None:
     joint("head_pitch", "neck_link", "head_link", neck["pitch_offset"], (0, 0, 0), "0 1 0")
 
 
+def apply_mass_target(robot: ET.Element, target: dict | None) -> list[str]:
+    """Close the gap between the CAD mass and the real (or reference) mass.
+
+    method "scale": every link mass and inertia times total/current (keeps the
+    mass distribution). method "lump": the gap as one box on `link`.
+    """
+    if not target or target.get("total") is None:
+        return []
+    current = total_mass(robot)
+    gap = target["total"] - current
+    if target.get("method", "scale") == "scale":
+        k = target["total"] / current
+        for link in robot.findall("link"):
+            m = link.find("inertial/mass")
+            if m is None:
+                continue
+            m.set("value", fmt(float(m.get("value")) * k))
+            el = link.find("inertial/inertia")
+            for key in el.attrib:
+                el.set(key, fmt(float(el.get(key)) * k))
+        return [f"mass_target: all links x{k:.4f} ({current:.3f} -> {target['total']:.3f} kg, {target.get('source', '')})"]
+    if gap <= 0:
+        raise ValueError(f"mass_target lump needs a positive gap, model already has {current:.3f} kg")
+    lump = ET.SubElement(robot, "link", name="unmodelled_mass")
+    set_inertial(lump, gap, np.zeros(3), box_inertia(gap, target["size"]))
+    t = np.linalg.inv(world_transforms(robot)[target["link"]])
+    t = t @ np.vstack([np.hstack([np.eye(3), np.array(target["position_base"])[:, None]]), [0, 0, 0, 1]])
+    j = ET.SubElement(robot, "joint", name="unmodelled_mass_joint", type="fixed")
+    ET.SubElement(j, "parent", link=target["link"])
+    ET.SubElement(j, "child", link="unmodelled_mass")
+    ET.SubElement(j, "origin", xyz=" ".join(map(fmt, t[:3, 3])), rpy=" ".join(map(fmt, matrix_to_rpy(t[:3, :3]))))
+    return [f"mass_target: +{gap:.3f} kg lumped on {target['link']} ({target.get('source', '')})"]
+
+
 def build(source: Path, hw: dict, mesh_dir: Path) -> tuple[ET.ElementTree, dict, list[str]]:
     tree = ET.parse(source)
     robot = tree.getroot()
@@ -232,6 +266,7 @@ def build(source: Path, hw: dict, mesh_dir: Path) -> tuple[ET.ElementTree, dict,
             lim = j.find("limit")
             lim.attrib.update(lower=fmt(s["lower"]), upper=fmt(s["upper"]), effort=fmt(s["effort"]), velocity=fmt(s["velocity"]))
     add_neck(robot, hw["neck"], specs)
+    log += apply_mass_target(robot, hw.get("mass_target"))
 
     for mesh in robot.iter("mesh"):
         fname = mesh.get("filename")
@@ -270,8 +305,6 @@ def main() -> None:
 
     print("\n".join(log))
     print(f"\nmass: export {before:.3f} kg -> model {after:.3f} kg")
-    if hw.get("measured_mass"):
-        print(f"scale {hw['measured_mass']:.3f} kg, gap {hw['measured_mass'] - after:+.3f} kg")
     print(f"wrote {out} and lupus_joints.yaml")
 
 
