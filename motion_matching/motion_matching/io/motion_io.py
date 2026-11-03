@@ -28,6 +28,7 @@ def save_motion_npz(
     target_fps: int = 50,
     source_fps: int = 60,
     vel_cmd: Optional[np.ndarray] = None,
+    robot: str = "g1",
 ) -> dict[str, np.ndarray]:
     """Resample ``qpos`` to ``target_fps`` and save it as a FAR-tracking npz.
 
@@ -39,12 +40,14 @@ def save_motion_npz(
         vel_cmd: Optional ``(N, .)`` velocity-command array to attach under the
             ``vel_cmd`` key. The caller is responsible for having already
             resampled it to ``target_fps`` (it is stored verbatim as float32).
+        robot: RobotSpec name; selects the FK model and layout
+            (see :func:`qpos_to_tracking`).
 
     Returns:
         The tracking dict that was written (handy for tests / further use).
     """
     qpos = resample_data(qpos, target_fps, original_fps=source_fps)
-    tracking = qpos_to_tracking(qpos, target_fps)
+    tracking = qpos_to_tracking(qpos, target_fps, robot=robot)
     if vel_cmd is not None:
         tracking["vel_cmd"] = vel_cmd.astype(np.float32)
     np.savez(output_file, **tracking)
@@ -59,6 +62,7 @@ def save_edited_motion_npz(
     target_fps: float,
     speed: float = 1.0,
     vel_cmd: np.ndarray | None = None,
+    robot: str = "g1",
 ) -> dict[str, np.ndarray]:
     """Save a speed-edited motion, keeping commands aligned with its frames.
 
@@ -80,7 +84,7 @@ def save_edited_motion_npz(
 
     adjusted_qpos = adjust_data_speed(qpos, speed)
     adjusted_qpos = resample_data(adjusted_qpos, target_fps, original_fps=source_fps)
-    tracking = qpos_to_tracking(adjusted_qpos, int(target_fps))
+    tracking = qpos_to_tracking(adjusted_qpos, int(target_fps), robot=robot)
     if vel_cmd is not None:
         adjusted_commands = adjust_vel_cmd_speed(vel_cmd, speed)
         adjusted_commands = resample_vel_cmd(adjusted_commands, target_fps, original_fps=source_fps)
