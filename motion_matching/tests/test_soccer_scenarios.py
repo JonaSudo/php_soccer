@@ -13,9 +13,9 @@ def _commands(cfg):
     return [step["command"] for step in cfg["steps"]]
 
 
-@pytest.mark.parametrize("name", sorted(S.SOCCER_SCENARIOS))
+@pytest.mark.parametrize("name", sorted({**S.SOCCER_SCENARIOS, **S.PHASE6_SCENARIOS}))
 def test_every_step_has_a_continuous_command(name) -> None:
-    configs, speed_up = S.SOCCER_SCENARIOS[name](num_configs=12)
+    configs, speed_up = {**S.SOCCER_SCENARIOS, **S.PHASE6_SCENARIOS}[name](num_configs=12)
     assert len(configs) == 12 and speed_up == S.SOCCER_SPEEDUP
     assert len({c["name"] for c in configs}) == 12
     for cfg in configs:
@@ -128,3 +128,46 @@ def test_far_ball_is_far() -> None:
     xy, _ = _curved_path()
     for _ in range(20):
         assert S.path_distance(S.sample_ball_far(rng, xy), xy)[0] >= S.FAR_BALL_MIN_DISTANCE
+
+
+# ------------------------------------------------------------------ Phase 6
+def test_phase2_recipes_unchanged_without_kick_dir() -> None:
+    for fn in (S.walk_kick, S.stand_kick):
+        configs, _ = fn(num_configs=4)
+        assert all("kick_dir" not in cfg["soccer"] for cfg in configs)
+    assert [c["steps"] for c in S.walk_kick(num_configs=4, kick_dir_max=0.3)[0]] == [
+        c["steps"] for c in S.walk_kick(num_configs=4)[0]
+    ]  # the kick direction has its own RNG stream
+
+
+@pytest.mark.parametrize("fn", [S.walk_kick_dir, S.stand_kick_dir])
+def test_kick_dir_scenarios_sample_within_range(fn) -> None:
+    configs, _ = fn(num_configs=40)
+    dirs = np.array([cfg["soccer"]["kick_dir"] for cfg in configs])
+    assert np.all(np.abs(dirs) <= S.KICK_DIR_MAX) and dirs.min() < -0.1 and dirs.max() > 0.1
+    scenario = fn.__name__
+    assert all(cfg["name"].startswith(scenario) and cfg["soccer"]["scenario"] == scenario for cfg in configs)
+    assert all(cfg["soccer"]["ball"]["mode"] == "kick" for cfg in configs)
+
+
+def test_walk_dribble_recipe() -> None:
+    configs, _ = S.walk_dribble(num_configs=10)
+    for cfg in configs:
+        assert cfg["soccer"]["ball"]["mode"] == "dribble"
+        assert not any(s["type"] == "skill" for s in cfg["steps"])
+        assert {s["kick_enable"] for s in cfg["steps"]} == {0.0}
+        for v, omega in _commands(cfg):
+            assert v <= S.DRIBBLE_V_MAX and abs(omega) <= S.DRIBBLE_OMEGA_MAX
+
+
+def test_dribble_ball_lies_in_front_where_walking_starts() -> None:
+    rng = np.random.default_rng(0)
+    yaw = 0.7
+    quat = np.array([[np.cos(yaw / 2), 0, 0, np.sin(yaw / 2)]] * 6)
+    root = np.array([[1.0, 1.0]] * 3 + [[1.0 + 0.1 * k * np.cos(yaw), 1.0 + 0.1 * k * np.sin(yaw)] for k in (1, 2, 3)])
+    for _ in range(20):
+        ball = S.sample_ball_dribble(rng, root, quat)
+        rel = ball - root[2]
+        ahead = rel @ np.array([np.cos(yaw), np.sin(yaw)])
+        side = rel @ np.array([-np.sin(yaw), np.cos(yaw)])
+        assert S.DRIBBLE_AHEAD[0] - 1e-9 <= ahead <= S.DRIBBLE_AHEAD[1] + 1e-9 and abs(side) <= S.DRIBBLE_LATERAL

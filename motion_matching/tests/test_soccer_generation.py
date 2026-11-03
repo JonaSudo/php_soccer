@@ -142,3 +142,26 @@ def test_lupus_kick_runs_through_motion_matching(placeholder_db, tmp_path, monke
         fields = dict(saved["extra"], vel_cmd=saved["vel_cmd"].astype(np.float32))
         validate_kick_npz(fields)
         assert len(fields["kick_phase"]) == len(saved["vel_cmd"]) and fields["contact_frame"].sum() == 1
+
+
+def test_phase6_motions_carry_kick_dir_and_dribble_mode(placeholder_db, tmp_path) -> None:
+    from motion_matching.io.kick_io import KICK_MODE_DRIBBLE, KICK_MODE_KICK
+
+    for fn in (S.walk_kick_dir, S.stand_kick_dir, S.walk_dribble):
+        cfg = fn(num_configs=1)[0][0]
+        _generate(cfg, tmp_path, "g1", 1.0)
+        data = dict(np.load(tmp_path / f"{cfg['name']}_motion.npz"))
+        validate_kick_npz(data)
+        assert str(data["scenario"]) == fn.__name__
+        if fn is S.walk_dribble:
+            assert (data["kick_mode"] == KICK_MODE_DRIBBLE).all() and not data["contact_frame"].any()
+            assert (data["kick_dir"] == 0).all() and (data["kick_enable"] == 0).all()
+            # ball in front of the robot where it starts walking
+            root_xy = data["body_pos_w"][:, 0, :2]
+            assert S.path_distance(data["object_pos_w"][0, :2], root_xy)[0] < 0.1
+        else:
+            assert np.allclose(data["kick_dir"], cfg["soccer"]["kick_dir"])
+            assert 0 < abs(float(data["kick_dir"][0])) <= S.KICK_DIR_MAX
+            assert int(data["contact_frame"].sum()) == 1
+            on = data["kick_enable"] > 0.5
+            assert (data["kick_mode"][on] == KICK_MODE_KICK).all()

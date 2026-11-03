@@ -64,6 +64,8 @@ Zwischen zwei Detektionen bleibt der letzte Wert stehen; `visible` gibt an, ob d
 - Flackern: Steht `kick_enable` in der Referenz auf 0, springt es in der Observation mit 1 % pro Schritt für 1–2 Schritte auf 1 (mindestens 10 Schritte Abstand). Ein einzelner Fehlwert des Behaviors löst damit keinen Freistoß aus.
 - Wertebereiche für zufällige Commands: `v` 0–1 m/s, `|ω|` ≤ 1 rad/s (offene Frage: v_min, v_max, ω_max)
 
+Phase 6 (Kickrichtung, Dribbeln): [PHASE6.md](PHASE6.md).
+
 ## Offene Punkte
 
 - Rauschparameter und Latenz messen und in `BallVisionCfg` eintragen

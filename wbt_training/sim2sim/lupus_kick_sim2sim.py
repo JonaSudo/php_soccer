@@ -68,6 +68,8 @@ class KickScenario:
     head_pitch: float = 0.6  # rad, looking down while scanning
     jitter: dict | None = None
     seed: int = 0
+    kick_dir: float = 0.0  # Phase 6: rad relative to the heading at contact
+    mode: int | None = None  # Phase 6 policies with 3 modes: 0 ignore, 1 kick, 2 dribble (None: from kick_enable)
 
 
 def _ball_spec() -> dict:
@@ -258,7 +260,9 @@ class LupusKickSim2Sim:
                 vj, kj = jitter.apply(torch.tensor([vel], dtype=torch.float32), torch.tensor([float(kick)]))
                 vel, kick = vj[0].numpy(), bool(kj[0] > 0.5)
             ball_b = self._ball_b()
-            self.cmd = BehaviorCommand(v=float(vel[0]), omega=float(vel[1]), kick_enable=bool(kick))
+            self.cmd = BehaviorCommand(
+                v=float(vel[0]), omega=float(vel[1]), kick_enable=bool(kick), kick_dir=float(sc.kick_dir), mode=sc.mode
+            )
             self.cmd.neck = self.head_targets(sc, ball_b)
             head_q = self._xyzw(d.xquat[self.head_id])
             vision.capture(self.t, d.qpos[self.ball_q : self.ball_q + 3].copy(), d.xpos[self.head_id].copy(), head_q, d.qpos[:3].copy(), self._xyzw(d.qpos[3:7]))
@@ -298,7 +302,7 @@ class LupusKickSim2Sim:
                     "cmd_w": torch.tensor([sc.omega]),
                     "kick_phase": torch.tensor([phase]),
                     "contact": torch.tensor([contact]),
-                    "target_heading": torch.tensor([float("nan")]),
+                    "target_heading": torch.tensor([yaw + sc.kick_dir]),
                 }
             )
         tracker.finish([0], terminated=[bool(tracker.fell[0])])
@@ -328,6 +332,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--trigger", type=float, default=1.0)
     ap.add_argument("--seconds", type=float, default=6.0)
     ap.add_argument("--no-head-scan", action="store_true")
+    ap.add_argument("--kick-dir-deg", type=float, default=0.0, help="Phase 6: kick direction relative to the heading")
+    ap.add_argument("--dribble", action="store_true", help="Phase 6: mode 2 (dribble), no kick")
     ap.add_argument("--jitter", action="store_true", help="behavior-stack command jitter (defaults of CommandJitterCfg)")
     ap.add_argument("--grid", action="store_true", help="run the PHP-style grid instead of one scenario")
     ap.add_argument("--episodes", type=int, default=3, help="episodes per grid cell")
@@ -347,11 +353,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             lateral=args.lateral,
             v=0.0 if args.stand_kick else args.v,
             omega=args.omega,
-            kick_enable=not args.no_kick,
+            kick_enable=not (args.no_kick or args.dribble),
             trigger_time=args.trigger if args.stand_kick else None,
             seconds=args.seconds,
             head_scan=not args.no_head_scan,
             jitter=jitter,
+            kick_dir=math.radians(args.kick_dir_deg),
+            mode=2 if args.dribble else None,
         )
         rec = sim.run(sc)
         rec["latency"] = sim.node.stats.as_dict()

@@ -6,6 +6,7 @@
 # Override REGISTRY with one file:// directory or W&B artifact per teacher.
 # FINETUNE=1: DAgger + PPO (default); FINETUNE=0: pure DAgger.
 # WARMUP_STEPS=0, NGPUS=2; LOGGER=wandb (LOGGER=disabled keeps logging local).
+# EXP_PRESET overrides the preset, e.g. exp:lupus-dribble-distill-finetune (Phase 6).
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/setup_env.sh"
 php_launcher_init
@@ -15,7 +16,9 @@ WARMUP_STEPS="${WARMUP_STEPS:-0}"
 FINETUNE=$(php_boolean FINETUNE "${FINETUNE:-1}")
 php_positive_integer NGPUS "$NGPUS"
 [[ "$WARMUP_STEPS" =~ ^(0|[1-9][0-9]*)$ ]] || { php_error 'WARMUP_STEPS must be a nonnegative integer'; exit 1; }
-if [[ "$FINETUNE" == True ]]; then
+if [[ -n "${EXP_PRESET:-}" ]]; then
+    :
+elif [[ "$FINETUNE" == True ]]; then
     EXP_PRESET=exp:lupus-kick-distill-finetune
 else
     EXP_PRESET=exp:lupus-kick-distill

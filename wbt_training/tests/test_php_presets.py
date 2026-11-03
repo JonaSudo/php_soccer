@@ -162,7 +162,16 @@ def test_converter_works_with_only_numpy(tmp_path):
 
 
 # LUPUS presets live in wbt_training/config_values/lupus.py (tests in test_lupus_config.py).
-LUPUS_PRESETS = ("lupus_loco", "lupus_kick_teacher", "lupus_kick_distill", "lupus_kick_distill_finetune")
+LUPUS_PRESETS = (
+    "lupus_loco",
+    "lupus_kick_teacher",
+    "lupus_kick_distill",
+    "lupus_kick_distill_finetune",
+    "lupus_kickdir_teacher",
+    "lupus_kickdir_distill_finetune",
+    "lupus_dribble_teacher",
+    "lupus_dribble_distill_finetune",
+)
 
 
 def test_registry_contains_the_eight_php_presets_and_lupus():

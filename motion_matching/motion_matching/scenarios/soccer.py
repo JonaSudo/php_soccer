@@ -12,8 +12,16 @@ block that tells :func:`build_soccer_fields` where the ball goes::
     "soccer": {"scenario": "walk_kick", "ball": {"mode": "kick"}, "seed": 7}
 
 Ball modes: ``kick`` (annotated ball of the matched kick clip), ``outside_zone``
-(just outside the stand kick zone), ``offpath`` (beside the walking corridor)
-and ``far`` (parked far from the path; the teacher needs a ball in every motion).
+(just outside the stand kick zone), ``offpath`` (beside the walking corridor),
+``far`` (parked far from the path; the teacher needs a ball in every motion)
+and ``dribble`` (Phase 6: on the path just in front of the robot).
+
+Phase 6 (:data:`PHASE6_SCENARIOS`, not part of the Phase-2 default set):
+``walk_kick_dir`` / ``stand_kick_dir`` sample a kick direction per motion
+(``kick_dir`` in rad, uniform in +-``kick_dir_max``, written to the ``soccer``
+block and from there into every frame); the reference clip is the straight
+kick, the teacher learns to place the foot for the direction. ``walk_dribble``
+walks through a ball lying on the path with ``kick_mode`` 2.
 
 All ranges below are placeholders tuned for a robot of Booster K1 size; they
 are module constants and keyword arguments so they are easy to change once
@@ -26,7 +34,13 @@ from typing import Any, Optional, Sequence
 
 import numpy as np
 
-from motion_matching.io.kick_io import KICK_SIDE, build_kick_fields, load_ball_radius, map_frame
+from motion_matching.io.kick_io import (
+    KICK_MODE_DRIBBLE,
+    KICK_SIDE,
+    build_kick_fields,
+    load_ball_radius,
+    map_frame,
+)
 from motion_matching.utils.data_utils import adjust_vel_cmd_speed, resample_vel_cmd
 
 # --- Command ranges (open question in the plan: what LUPUS has to manage) ---
@@ -55,6 +69,13 @@ END_STAND_DURATION = 2.5
 SOCCER_SPEEDUP = 1.0
 
 FEET = ("right", "left")
+
+# --- Phase 6 ---
+KICK_DIR_MAX = float(np.deg2rad(30.0))  # first range of kick directions
+DRIBBLE_AHEAD = (0.15, 0.30)  # ball distance in front of the root when walking starts
+DRIBBLE_LATERAL = 0.05
+DRIBBLE_V_MAX = 0.6  # dribbling is slower than walking
+DRIBBLE_OMEGA_MAX = 0.3
 
 
 # --------------------------------------------------------------------------
@@ -131,12 +152,24 @@ def _random_walk_body(
     return steps, v
 
 
-def _cfg(name: str, steps: list, scenario: str, ball: dict, seed: int, kick_side: Optional[str] = None) -> dict:
-    return {
-        "name": name,
-        "steps": steps,
-        "soccer": {"scenario": scenario, "ball": ball, "seed": int(seed), "kick_side": kick_side},
-    }
+def _cfg(
+    name: str,
+    steps: list,
+    scenario: str,
+    ball: dict,
+    seed: int,
+    kick_side: Optional[str] = None,
+    kick_dir: Optional[float] = None,
+) -> dict:
+    soccer = {"scenario": scenario, "ball": ball, "seed": int(seed), "kick_side": kick_side}
+    if kick_dir is not None:
+        soccer["kick_dir"] = float(kick_dir)
+    return {"name": name, "steps": steps, "soccer": soccer}
+
+
+def _sample_kick_dir(rng: np.random.Generator, kick_dir_max: float) -> Optional[float]:
+    """Kick direction in rad, or ``None`` (straight, no draw) when ``kick_dir_max`` is 0."""
+    return float(rng.uniform(-kick_dir_max, kick_dir_max)) if kick_dir_max > 0 else None
 
 
 # --------------------------------------------------------------------------
@@ -150,17 +183,23 @@ def walk_kick(
     v_max: float = V_MAX,
     omega_max: float = OMEGA_MAX,
     seed: int = 2026,
+    kick_dir_max: float = 0.0,
+    scenario: str = "walk_kick",
 ) -> tuple[list[dict[str, Any]], float]:
     """Stand -> walk (random v, omega, 0.1-3 s) -> straight run-up -> kick -> 2 s walk -> stand.
 
     Alternates the kick foot so both standing legs are covered; the random
     walking duration spreads the gait phase at which the kick is entered.
-    ``kick_enable`` is 1 for the whole motion.
+    ``kick_enable`` is 1 for the whole motion. ``kick_dir_max`` > 0 (Phase 6)
+    adds a random kick direction per motion; 0 leaves the RNG stream and the
+    configs exactly as in Phase 2.
     """
     rng = np.random.default_rng(seed)
+    dir_rng = np.random.default_rng(seed + 100_000)
     configs = []
     for i in range(num_configs):
         foot = FEET[i % 2]
+        kick_dir = _sample_kick_dir(dir_rng, kick_dir_max)
         body, _ = _random_walk_body(
             rng, total_duration=(0.1, 3.0), kick_enable=1.0, v_min=v_min, v_max=v_max, omega_max=omega_max
         )
@@ -177,7 +216,7 @@ def walk_kick(
             walk_step(v_after, omega_after, 2.0, 1.0),
             stand_step(END_STAND_DURATION, 1.0),
         ]
-        configs.append(_cfg(f"walk_kick_{i:04d}_{foot}", steps, "walk_kick", {"mode": "kick"}, seed + i, foot))
+        configs.append(_cfg(f"{scenario}_{i:04d}_{foot}", steps, scenario, {"mode": "kick"}, seed + i, foot, kick_dir))
     return configs, SOCCER_SPEEDUP
 
 
@@ -187,16 +226,20 @@ def stand_kick(
     v_max: float = V_MAX,
     omega_max: float = OMEGA_MAX,
     seed: int = 3026,
+    kick_dir_max: float = 0.0,
+    scenario: str = "stand_kick",
 ) -> tuple[list[dict[str, Any]], float]:
     """Free kick: stand at the ball, wait 0.5-3 s with kick_enable 0, rising edge -> kick.
 
     Afterwards either keep standing or walk off. ``kick_enable`` stays 1 after
-    the edge; the rising edge is the trigger.
+    the edge; the rising edge is the trigger. ``kick_dir_max`` as in :func:`walk_kick`.
     """
     rng = np.random.default_rng(seed)
+    dir_rng = np.random.default_rng(seed + 100_000)
     configs = []
     for i in range(num_configs):
         foot = FEET[i % 2]
+        kick_dir = _sample_kick_dir(dir_rng, kick_dir_max)
         wait = float(rng.uniform(0.5, 3.0))
         steps = [stand_step(STAND_DURATION + wait, 0.0), kick_step(f"kick_stand_{foot}", 0.0)]
         if rng.random() < 0.5:
@@ -207,7 +250,7 @@ def stand_kick(
             steps += [walk_step(v, omega, float(rng.uniform(1.0, 2.5)), 1.0), stand_step(END_STAND_DURATION, 1.0)]
             tail = "walk"
         configs.append(
-            _cfg(f"stand_kick_{i:04d}_{foot}_{tail}", steps, "stand_kick", {"mode": "kick"}, seed + i, foot)
+            _cfg(f"{scenario}_{i:04d}_{foot}_{tail}", steps, scenario, {"mode": "kick"}, seed + i, foot, kick_dir)
         )
     return configs, SOCCER_SPEEDUP
 
@@ -274,6 +317,58 @@ SOCCER_SCENARIOS = {
     "stand_ball_outside_zone": stand_ball_outside_zone,
     "walk_ball_offpath": walk_ball_offpath,
     "walk_no_ball": walk_no_ball,
+}
+
+
+# --------------------------------------------------------------------------
+# Phase 6 scenarios
+# --------------------------------------------------------------------------
+
+
+def walk_kick_dir(
+    num_configs: int = 300, kick_dir_max: float = KICK_DIR_MAX, seed: int = 7026, **kwargs: Any
+) -> tuple[list[dict[str, Any]], float]:
+    """:func:`walk_kick` with a random kick direction in +-``kick_dir_max`` per motion."""
+    return walk_kick(num_configs, seed=seed, kick_dir_max=kick_dir_max, scenario="walk_kick_dir", **kwargs)
+
+
+def stand_kick_dir(
+    num_configs: int = 100, kick_dir_max: float = KICK_DIR_MAX, seed: int = 8026, **kwargs: Any
+) -> tuple[list[dict[str, Any]], float]:
+    """:func:`stand_kick` with a random kick direction in +-``kick_dir_max`` per motion."""
+    return stand_kick(num_configs, seed=seed, kick_dir_max=kick_dir_max, scenario="stand_kick_dir", **kwargs)
+
+
+def walk_dribble(
+    num_configs: int = 200,
+    v_min: float = V_MIN,
+    v_max: float = DRIBBLE_V_MAX,
+    omega_max: float = DRIBBLE_OMEGA_MAX,
+    seed: int = 9026,
+) -> tuple[list[dict[str, Any]], float]:
+    """Stand -> walk (slow, gentle turns) -> stand with the ball in front, ``kick_mode`` 2.
+
+    The reference is plain walking; the ball lies on the path just in front of
+    the robot when it starts walking (``DRIBBLE_AHEAD``). Pushing it along is
+    learned from the dribble rewards (``wbt_training.config_values.lupus_phase6``).
+    ``kick_enable`` is 0: no kick is wanted, the mode says "dribble".
+    """
+    rng = np.random.default_rng(seed)
+    configs = []
+    for i in range(num_configs):
+        body, _ = _random_walk_body(
+            rng, total_duration=(2.0, 6.0), kick_enable=0.0, v_min=v_min, v_max=v_max, omega_max=omega_max,
+            max_segments=3,
+        )
+        steps = [stand_step(STAND_DURATION, 0.0), *body, stand_step(END_STAND_DURATION, 0.0)]
+        configs.append(_cfg(f"walk_dribble_{i:04d}", steps, "walk_dribble", {"mode": "dribble"}, seed + i))
+    return configs, SOCCER_SPEEDUP
+
+
+PHASE6_SCENARIOS = {
+    "walk_kick_dir": walk_kick_dir,
+    "stand_kick_dir": stand_kick_dir,
+    "walk_dribble": walk_dribble,
 }
 
 
@@ -353,6 +448,20 @@ def sample_ball_offpath(
         if lateral[0] <= d <= lateral[1]:
             return ball
     raise RuntimeError("could not place an off-path ball; path curls too tightly")
+
+
+def sample_ball_dribble(
+    rng: np.random.Generator,
+    root_xy: np.ndarray,
+    root_quat_wxyz: np.ndarray,
+    ahead: tuple[float, float] = DRIBBLE_AHEAD,
+    lateral: float = DRIBBLE_LATERAL,
+) -> np.ndarray:
+    """Ball in front of the robot where it starts walking (first moving frame)."""
+    moving = np.flatnonzero(np.linalg.norm(np.diff(root_xy, axis=0), axis=1) > 1e-4)
+    k = int(moving[0]) if len(moving) else 0
+    fwd, left = _heading_frame(root_quat_wxyz[k])
+    return root_xy[k] + float(rng.uniform(*ahead)) * fwd + float(rng.uniform(-lateral, lateral)) * left
 
 
 def sample_ball_far(
@@ -442,6 +551,8 @@ def build_soccer_fields(
             ball_xy = sample_ball_offpath(rng, root_xy, root_quat)
         elif mode == "far":
             ball_xy = sample_ball_far(rng, root_xy)
+        elif mode == "dribble":
+            ball_xy = sample_ball_dribble(rng, root_xy, root_quat)
         else:
             raise ValueError(f"unknown soccer ball mode {mode!r}")
 
@@ -455,6 +566,10 @@ def build_soccer_fields(
         contact=contact,
         ball_pos=np.array([ball_xy[0], ball_xy[1], ball_z], dtype=np.float32),
     )
+    if soccer_cfg.get("kick_dir") is not None:
+        fields["kick_dir"][:] = float(soccer_cfg["kick_dir"])
+    if mode == "dribble":
+        fields["kick_mode"][:] = KICK_MODE_DRIBBLE
     fields["kick_side"] = np.array(KICK_SIDE[kick_side], dtype=np.int8)
     fields["scenario"] = np.array(soccer_cfg.get("scenario", ""))
     return fields
