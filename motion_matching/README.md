@@ -96,3 +96,18 @@ Register new skills in
 [skill_registry.py](motion_matching/scenarios/skill_registry.py), compose
 scenarios in [builtin.py](motion_matching/scenarios/builtin.py), and run them
 with `--mode generate --scenario <name>`.
+
+## Robots
+
+Robot-specific data (URDF, DoF count, foot and hip bones, joint axes, mirror
+rules, simulation-bone joints) lives in a `RobotSpec` in
+[robot_spec.py](motion_matching/kinematics/robot_spec.py). G1 is the default
+(`G1_SPEC`). To add a robot, create a `RobotSpec`, register it in
+`ROBOT_SPECS`, and pass `--robot <name>` to `generate_database`, `run` and
+`play_database`. Joint axes and bone indices are derived from the URDF when the
+spec is first used.
+
+Use `joint_axes_frame="zero_pose"` for URDFs whose joint origins carry a
+rotation (`rpy`), such as CAD exports where every axis is `0 0 1`. G1 uses
+`"local"`, which ignores the origin rotation and is what its released
+databases were built with.

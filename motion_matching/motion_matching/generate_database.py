@@ -9,15 +9,15 @@ import json
 import os
 from pathlib import Path
 
-from motion_matching.kinematics.urdf_kinematics import URDFKinematics
-from motion_matching.utils import G1_URDF, db_path, ROBOT_MOTIONS_DIR
+from motion_matching.kinematics.robot_spec import DEFAULT_ROBOT, ROBOT_SPECS, get_robot_spec
+from motion_matching.utils import db_path, ROBOT_MOTIONS_DIR
 from motion_matching.utils.data_utils import animation_mirror_xz, mirror_terrain
 
 
 def main() -> None:
     """ Parse Command Line Arguments """
 
-    parser = argparse.ArgumentParser(description="Generate motion database for G1 robot")
+    parser = argparse.ArgumentParser(description="Generate a motion-matching database for a robot (default: G1)")
     parser.add_argument(
         "--output",
         "-o",
@@ -30,7 +30,7 @@ def main() -> None:
     parser.add_argument(
         "--motion-file", type=Path,
         default=ROBOT_MOTIONS_DIR / "climb_76_high_speed_up.npz",
-        help="Source G1 NPZ containing qpos: [root_quat_wxyz, root_pos, dof29].",
+        help="Source NPZ containing qpos: [root_quat_wxyz, root_pos, dofs] in the robot's URDF joint order.",
     )
     parser.add_argument(
         "--terrain-file", type=Path,
@@ -38,6 +38,9 @@ def main() -> None:
         help="Terrain OBJ paired with the source motion; defaults to the released sample terrain.",
     )
     parser.add_argument("--fps", type=float, default=30, help="Source motion frame rate.")
+    parser.add_argument(
+        "--robot", default=DEFAULT_ROBOT, choices=sorted(ROBOT_SPECS), help="Robot spec to build the database for."
+    )
     args = parser.parse_args()
     if not np.isfinite(args.fps) or args.fps <= 0:
         parser.error("--fps must be positive and finite")
@@ -79,53 +82,17 @@ def main() -> None:
 
     """ Process URDF Kinematics """
 
-    kin = URDFKinematics(urdf_path=G1_URDF, load_meshes=False, load_collision_meshes=False)
+    robot = get_robot_spec(args.robot)
+    skeleton = robot.skeleton
+    joint_names = list(skeleton.joint_names)
+    joint_parents = skeleton.joint_parents
+    joint_bone_vectors = skeleton.joint_bone_vectors
 
-    # Build parent array
-    link_to_joint_idx = {kin.urdf.joint_map[name].child: i for i, name in enumerate(kin.joint_names)}
-
-    joint_parents = np.full(len(kin.joint_names), -1, dtype=np.int32)
-
-    for i, joint_name in enumerate(kin.joint_names):
-        joint = kin.urdf.joint_map[joint_name]
-        parent_link = joint.parent
-
-        if parent_link in link_to_joint_idx:
-            joint_parents[i] = link_to_joint_idx[parent_link]
-        elif parent_link == kin.urdf.base_link:
-            joint_parents[i] = -1
-
-    global_positions, global_orientations = kin.compute_joint_poses(
-        root_position=np.array([0.0, 0.0, 0.0]),
-        root_orientation=np.array([1.0, 0.0, 0.0, 0.0]),
-        joint_angles=np.zeros(kin.num_joints),
-    )
-
-    # Initialize array to store bone vectors (num_joints x 3)
-    joint_bone_vectors = np.zeros((kin.num_joints, 3))
-
+    print(f"Robot: {robot.name} ({robot.num_dofs} DoFs, URDF {robot.urdf_path})")
     print("Computing bone vectors for each joint...")
-    for i, joint_name in enumerate(kin.joint_names):
-        parent_idx = joint_parents[i]
-
-        # Find indices for parent and child links
-        if parent_idx != -1:
-            parent_pos = global_positions[parent_idx]
-            child_pos = global_positions[i]
-
-            # Bone vector = child position - parent position
-            joint_bone_vectors[i] = child_pos - parent_pos
-            print(
-                f"{i:2d}: {joint_name:30s} -> [{joint_bone_vectors[i][0]:6.3f}, {joint_bone_vectors[i][1]:6.3f}, {joint_bone_vectors[i][2]:6.3f}]"
-            )
-        else:
-            child_pos = global_positions[i]
-
-            # Bone vector = child position - 0
-            joint_bone_vectors[i] = child_pos
-            print(
-                f"{i:2d}: {joint_name:30s} -> [{joint_bone_vectors[i][0]:6.3f}, {joint_bone_vectors[i][1]:6.3f}, {joint_bone_vectors[i][2]:6.3f}]"
-            )
+    for i, joint_name in enumerate(joint_names):
+        v = joint_bone_vectors[i]
+        print(f"{i:2d}: {joint_name:30s} -> [{v[0]:6.3f}, {v[1]:6.3f}, {v[2]:6.3f}]")
 
     print(f"\nJoint bone vectors shape: {joint_bone_vectors.shape}")
 
@@ -133,16 +100,13 @@ def main() -> None:
     full_bone_vectors = np.concatenate([np.zeros((1, 3)), joint_bone_vectors], axis=0)
     print(f"Full bone vectors shape: {full_bone_vectors.shape}")
 
-    # Get rotation axis for each joint (DOF)
-    print("\nComputing joint rotation axes...")
-    joint_axes = np.zeros((kin.num_joints, 3))
-    for i, joint_name in enumerate(kin.joint_names):
-        joint = kin.urdf.joint_map[joint_name]
-        if hasattr(joint, "axis") and joint.axis is not None:
-            joint_axes[i] = np.array(joint.axis)
-            print(
-                f"{i:2d}: {joint_name:30s} -> axis: [{joint_axes[i][0]:6.3f}, {joint_axes[i][1]:6.3f}, {joint_axes[i][2]:6.3f}]"
-            )
+    # Get rotation axis for each joint (DOF). float64 as the database math
+    # has always been done in double precision here.
+    print(f"\nJoint rotation axes ({robot.joint_axes_frame} frame):")
+    joint_axes = robot.joint_axes.astype(np.float64)
+    for i, joint_name in enumerate(joint_names):
+        ax = joint_axes[i]
+        print(f"{i:2d}: {joint_name:30s} -> axis: [{ax[0]:6.3f}, {ax[1]:6.3f}, {ax[2]:6.3f}]")
 
     # Add root axis (zero for root joint)
     print(f"Joint axes shape: {joint_axes.shape}")
@@ -151,7 +115,7 @@ def main() -> None:
     joint_parents_w_root = np.concatenate([[-1], joint_parents + 1])
 
     # Build name array
-    joint_names_w_root = [kin.urdf.base_link] + kin.joint_names
+    joint_names_w_root = [skeleton.base_link] + joint_names
 
     """ We will accumulate data in these lists """
 
@@ -185,7 +149,10 @@ def main() -> None:
             root_wxyz = data["qpos"][:, :4]
             root_pos = data["qpos"][:, 4:7]
 
-            assert dof.shape[1] == joint_axes.shape[0]
+            if dof.shape[1] != robot.num_dofs:
+                raise ValueError(
+                    f"{filename}: qpos has {dof.shape[1]} DoFs, robot {robot.name!r} has {robot.num_dofs}"
+                )
 
             positions = np.repeat(full_bone_vectors[np.newaxis, :, :], num_frames, axis=0)
             positions[:, 0] = root_pos  # T x (J+1) x 3
@@ -198,7 +165,13 @@ def main() -> None:
 
             if mirror:
                 dof, root_pos, root_wxyz = animation_mirror_xz(
-                    dof=dof, root_pos=root_pos, root_wxyz=root_wxyz, names=kin.joint_names
+                    dof=dof,
+                    root_pos=root_pos,
+                    root_wxyz=root_wxyz,
+                    names=joint_names,
+                    neg_joints=robot.mirror_negate_joints,
+                    left_prefix=robot.left_prefix,
+                    right_prefix=robot.right_prefix,
                 )
                 positions[:, 0] = root_pos  # T x (J+1) x 3
                 rotations = quat.unroll(quat.from_angle_axis(dof, joint_axes))
@@ -232,13 +205,8 @@ def main() -> None:
             global_rotations, global_positions = quat.fk(lrot=rotations, lpos=positions, parents=joint_parents_w_root)
 
             # Specify joints to use for simulation bone
-            sim_position_joints = np.array(
-                [
-                    joint_names_w_root.index("left_shoulder_pitch_joint"),
-                    joint_names_w_root.index("right_shoulder_pitch_joint"),
-                ]
-            )
-            sim_rotation_joint = joint_names_w_root.index(kin.urdf.base_link)
+            sim_position_joints = np.array([joint_names_w_root.index(n) for n in robot.sim_position_joints])
+            sim_rotation_joint = joint_names_w_root.index(skeleton.base_link)
 
             # Position comes from spine joint
             sim_position = np.array([1.0, 1.0, 0.0]) * global_positions[:, sim_position_joints].mean(
@@ -304,9 +272,7 @@ def main() -> None:
                 np.sum(
                     global_velocities[
                         :,
-                        np.array(
-                            [bone_names.index("left_ankle_roll_joint"), bone_names.index("right_ankle_roll_joint")]
-                        ),
+                        np.array([bone_names.index(robot.left_foot_joint), bone_names.index(robot.right_foot_joint)]),
                     ]
                     ** 2,
                     axis=-1,

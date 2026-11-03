@@ -12,14 +12,9 @@ import trimesh
 
 from motion_matching.core.features import forward_kinematics
 from motion_matching.utils import db_path
-from motion_matching.utils.math_utils import quat_to_scaled_angle_axis
 from motion_matching.core.database import MotionMatchingDatabase
-from motion_matching.viz import add_world_scene_with_g1
-from motion_matching.metadata.constants import (
-    G1_JOINT_AXES as joint_axes,
-    G1_BONE_LEFT_FOOT as bone_left_foot,
-    G1_BONE_RIGHT_FOOT as bone_right_foot,
-)
+from motion_matching.kinematics.robot_spec import DEFAULT_ROBOT, ROBOT_SPECS, get_robot_spec
+from motion_matching.viz import add_world_scene_with_robot
 
 
 # NOTE: Edit the terrain files to point to your terrains.
@@ -52,7 +47,7 @@ def _resolve_database_path(arg: str) -> Path:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Motion Matching visualizer for G1 robot")
+    parser = argparse.ArgumentParser(description="Motion Matching database visualizer (default robot: G1)")
     parser.add_argument(
         "--database",
         "-d",
@@ -63,7 +58,11 @@ def main() -> None:
             "Default: database_g1_locomotion.bin"
         ),
     )
+    parser.add_argument(
+        "--robot", default=DEFAULT_ROBOT, choices=sorted(ROBOT_SPECS), help="Robot spec the database was built for."
+    )
     args = parser.parse_args()
+    robot = get_robot_spec(args.robot)
 
     database_path = _resolve_database_path(args.database)
 
@@ -74,6 +73,8 @@ def main() -> None:
 
     db = MotionMatchingDatabase()
     db.load_from_file(str(database_path))
+    if db.nbones() != robot.num_bones:
+        raise ValueError(f"{database_path} has {db.nbones()} bones, robot {robot.name!r} expects {robot.num_bones}")
 
     server = viser.ViserServer(port=8081, verbose=False)
 
@@ -98,14 +99,14 @@ def main() -> None:
         contact_label_text = server.gui.add_text("Contact (L/R)", initial_value="L: -  R: -")
         show_contact_markers = server.gui.add_checkbox("Show Contact Markers", True)
 
-    root_frame, viser_urdf = add_world_scene_with_g1(server)
-    print("Loaded G1 URDF for visualization")
+    root_frame, viser_urdf = add_world_scene_with_robot(server, robot)
+    print(f"Loaded {robot.name} URDF for visualization")
 
     fps = 60.0
     dt = 1.0 / fps
     current_frame = 0
 
-    initial_dof = np.zeros(29, dtype=np.float32)
+    initial_dof = np.zeros(robot.num_dofs, dtype=np.float32)
     viser_urdf.update_cfg(initial_dof)
 
     for idx, mesh_file in enumerate(terrain_files):
@@ -144,11 +145,7 @@ def main() -> None:
         final_bone_rotations = db.bone_rotations[next_frame]
 
         try:
-            dof_rotations = final_bone_rotations[-29:]
-            assert dof_rotations.shape[0] == len(joint_axes)
-
-            dof_aa = quat_to_scaled_angle_axis(dof_rotations)
-            dof = np.sum(dof_aa * joint_axes, axis=-1)
+            dof = robot.dof_from_bone_rotations(final_bone_rotations)
 
             global_positions, global_rotations = forward_kinematics(
                 final_bone_positions, final_bone_rotations, db.bone_parents, return_rotations=True
@@ -180,8 +177,8 @@ def main() -> None:
             contact_label_text.value = f"L: {int(l_contact)}  R: {int(r_contact)}"
             BLUE = np.array([0, 100, 255])
             for side, in_contact, bone in (
-                ("left", bool(l_contact), bone_left_foot),
-                ("right", bool(r_contact), bone_right_foot),
+                ("left", bool(l_contact), robot.bone_left_foot),
+                ("right", bool(r_contact), robot.bone_right_foot),
             ):
                 node = f"/contact_marker/{side}"
                 if show_contact_markers.value and in_contact:
