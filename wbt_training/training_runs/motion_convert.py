@@ -9,6 +9,11 @@ reorders joint DOFs Isaac→MuJoCo, and writes the holosoma format.
 Inputs that already carry ``joint_names`` / ``body_names`` (non-G1 robots such
 as LUPUS, written by ``qpos_to_tracking(..., robot=...)`` in MJCF order with the
 contact-point bodies included) are passed through; only the root DOFs are added.
+
+Other per-frame arrays (soccer kick fields such as ``object_pos_w``,
+``kick_enable``, ``kick_phase``, ``contact_frame``, ``kick_dir``,
+``kick_mode``) are kept; numeric per-motion scalars (``kick_side``) become
+per-frame arrays, 0-d strings (``scenario``) are dropped.
 """
 
 import argparse
@@ -39,6 +44,13 @@ OUT32_TO_BM30 = [
     13, 17, 21, 23, 25, 27, 29,      # right_shoulder_pitch .. right_wrist_yaw
 ]
 assert len(OUT32_TO_BM30) == 32
+
+
+# Inputs that convert() rewrites; everything else per-frame is passed through.
+_CONVERTED_KEYS = {
+    "fps", "joint_pos", "joint_vel", "body_pos_w", "body_quat_w", "body_lin_vel_w", "body_ang_vel_w",
+    "joint_names", "body_names", "qpos",
+}
 
 
 def convert(in_path: str, out_path: str) -> bool:
@@ -104,6 +116,18 @@ def _write(out_path, d, fps_val, body_pos_w, body_quat_w, body_lin_vel_w, body_a
     for passthrough in ("vel_cmd", "motion_ends", "motion_idxs"):
         if passthrough in d.files:
             out[passthrough] = d[passthrough]
+    T = joint_pos_h.shape[0]
+    for key in d.files:
+        if key in out or key in _CONVERTED_KEYS:
+            continue
+        value = np.asarray(d[key])
+        if value.ndim >= 1 and value.shape[0] == T:
+            # per-frame extras (soccer: object_pos_w, kick_enable, kick_phase, contact_frame, kick_dir, kick_mode)
+            out[key] = value
+        elif value.ndim == 0 and value.dtype.kind in "biuf":
+            # numeric per-motion scalars (kick_side) become per-frame, so combine_motions can concatenate them
+            out[key] = np.full(T, value, dtype=np.int8 if value.dtype.kind in "biu" else value.dtype)
+        # 0-d strings (scenario) and other shapes are dropped
 
     np.savez(out_path, **out)
     return True

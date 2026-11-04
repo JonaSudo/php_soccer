@@ -50,8 +50,20 @@ def combine_motions(input_files: list[str | Path]) -> Path:
     for key in data_list[0]:
         if key in _SCALAR_KEYS:
             combined[key] = data_list[0][key]
-        else:
-            combined[key] = np.concatenate([d[key] for d in data_list], axis=0)
+            continue
+        parts = []
+        for d in data_list:
+            value = np.asarray(d[key])
+            if value.ndim == 0:
+                # per-motion scalar (e.g. kick_side of a soccer motion): numeric ones
+                # become per-frame, strings (scenario) cannot be indexed by frame
+                if value.dtype.kind not in "biuf":
+                    parts = None
+                    break
+                value = np.full(d["joint_pos"].shape[0], value)
+            parts.append(value)
+        if parts is not None:
+            combined[key] = np.concatenate(parts, axis=0)
 
     combined_file_name = hashlib.sha256(
         ",".join(str(f) for f in input_files).encode()

@@ -16,6 +16,7 @@ import pytest
 SCRIPTS = Path(__file__).resolve().parents[1] / "training_runs"
 LAUNCHERS = (
     "run_terrain_teacher.sh",
+    "run_lupus_kick_teacher.sh",
     "run_terrain_warp_distill.sh",
     "run_lupus_kick_distill.sh",
     "eval_teacher.sh",

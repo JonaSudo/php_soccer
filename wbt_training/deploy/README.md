@@ -72,6 +72,27 @@ stats = node.run()                                         # 50 Hz, absolute Dea
 
 `node.stats.as_dict()` liefert Schleifenperiode, Rechenzeit und Kamera-bis-Policy-Latenz (Mittel, p50, p99, max). Mit diesen Messungen die Randomisierung anpassen: `latency_s_range` und `update_hz_range` in `BallVisionCfg`, Action-Delay (`ctrl_delay_step_range`) im Teacher-Preset.
 
+### Sprunggelenk (Parallelkinematik)
+
+Policy und Simulation arbeiten auf `ankle_pitch`/`ankle_roll`. `AnkleLinkageFirmware` (`deploy/ankle_linkage.py`) rechnet für die Firmware auf die zwei Motoren pro Fuß um: Winkel, Geschwindigkeiten (Jacobi-Matrix), Gains (Diagonale von `J^-T K J^-1`) und Momente. `model="linear"` entspricht genau den festen Übersetzungen der Simulation, `model="sine"` nimmt die Kurbelgeometrie erster Ordnung dazu. Hebelmaße kommen aus `robots/lupus/hardware.yaml` (Schätzwerte), Drehrichtung und Nullpunkt jedes Motors über `signs`/`offsets` am Gestell kalibrieren.
+
+```python
+from wbt_training.deploy.ankle_linkage import AnkleLinkage, AnkleLinkageFirmware
+fw = AnkleLinkageFirmware(MotorFirmware(), policy.meta.joint_names,
+                          {"left": AnkleLinkage.from_hardware(signs=(1, -1)), "right": AnkleLinkage.from_hardware()})
+node = PolicyNode(policy, firmware=fw, behavior=MyBehavior())
+```
+
+### Kalibrieren aus Messungen (`deploy/calibrate.py`)
+
+| Befehl | Eingabe | Ergebnis |
+| --- | --- | --- |
+| `python -m wbt_training.deploy.calibrate ball roll.csv` | Ball-Track `t,x,y` oder Zeilen `v0,distance` | `linear_damping`/`angular_damping` für `ball.yaml`, DR-Bereich |
+| `python -m wbt_training.deploy.calibrate vision det.csv` | `true_x,true_y,det_x,det_y` (+ `gp_x,gp_y`, `capture_time`) | `depth_sigma_k`, `depth_bias_range`, `bearing_sigma_deg`, `max_range`, `near_ground_projection_range`, `update_hz_range` |
+| `python -m wbt_training.deploy.calibrate latency stats.json --actuation-latency-ms 15` | `node.stats.as_dict()` | `latency_s_range`, `ctrl_delay_step_range` |
+
+Die MuJoCo-Sim2Sim dämpft den Ball linear und rotatorisch wie PhysX. Mit gleicher linearer und Winkeldämpfung `c` rollt der Ball in beiden Simulatoren mit `v' = -c v`.
+
 ## 4. Inbetriebnahme in Stufen
 
 1. am Gestell: `PolicyNode` mit Command 0, Gelenkziele und Gains prüfen, Latenzen messen
@@ -85,5 +106,6 @@ stats = node.run()                                         # 50 Hz, absolute Dea
 ## Offen
 
 - Transport zur Firmware (ROS 2, seriell) und Vision-Nachrichtenformat festlegen, dann `Firmware`/Vision-Adapter schreiben
-- Latenzen auf dem Roboter messen und Randomisierung anpassen
+- Latenzen auf dem Roboter messen und Randomisierung anpassen (`calibrate latency`)
+- Hebelmaße, Drehrichtungen und Nullpunkte der Sprunggelenkmotoren messen
 - GPU-Eval mit trainierten Checkpoints
