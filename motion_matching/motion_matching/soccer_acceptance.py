@@ -10,7 +10,8 @@ turns that into numbers over a whole bundle (every motion, not just samples):
   ball rests on the ground (z = radius) and does not move before contact.
 * **Both kick feet / standing legs**: per kick scenario, each foot kicks in
   at least ``min_side_share`` of the motions. The standing leg is the other
-  foot; it is reported as well, measured as the lower foot at kick entry.
+  foot; it is reported as well, measured as the lower foot at kick entry
+  ("both" in double support).
 * **Step phases at kick entry**: gait phase (0..1, one full stride) at the
   first commit frame (``kick_phase`` 1) of every run-up kick, from the
   fore-aft offset of the two feet in the heading frame. The phases must fill
@@ -58,6 +59,8 @@ class AcceptanceConfig:
     # Below this many run-up kicks the phase spread is reported but not enforced.
     min_run_ups_for_phase_check: int = 8
     position_tol: float = 1e-4
+    # Feet closer in height than this at kick entry count as double support ("both").
+    stance_height_tol: float = 0.01
     path_tol: float = 0.05
 
 
@@ -248,7 +251,8 @@ def check_motion(
             report.fail(f"{name}: no commit phase before contact")
             return
         k = int(commit[0])
-        stance = "left" if body_pos[k, li, 2] < body_pos[k, ri, 2] else "right"
+        dz = float(body_pos[k, li, 2] - body_pos[k, ri, 2])
+        stance = "both" if abs(dz) < cfg.stance_height_tol else ("left" if dz < 0 else "right")
         collect["stance"].setdefault(scenario, Counter())[stance] += 1
         if scenario in RUN_UP_SCENARIOS:
             offset = foot_forward_offset(body_pos, root_quat, li, ri)

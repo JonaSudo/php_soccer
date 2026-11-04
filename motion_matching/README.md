@@ -164,3 +164,33 @@ python -m motion_matching.run --mode generate --robot lupus --scenario walk_kick
 Until the real clips exist, `python -m motion_matching.placeholder_clips --robot g1 --build`
 writes synthetic stand-in clips and databases so the whole path can be run and
 tested on a CPU.
+
+### Training bundle and Phase-2 acceptance
+
+`build_soccer_bundle` generates every Phase-2 scenario in the plan's shares
+(walk_kick 40 %, stand_kick 15 %, stand_ball_outside_zone 5 %,
+walk_ball_offpath 20 %, walk_no_ball 20 %; default `--total 750` = 300 walk
+kicks, ~110 stand kicks) through the same `process_scenario` path as
+`run --mode generate`, converts the motions to holosoma's layout (keeping the
+kick fields; `kick_side` becomes per-frame, `scenario` moves to
+`manifest.json`), validates the directory with
+`wbt_training.utils.registry.validate_bundle` and runs the acceptance check:
+
+```bash
+python -m motion_matching.build_soccer_bundle --robot lupus --out ~/soccer_bundle --jobs 16
+python -m motion_matching.build_soccer_bundle check ~/soccer_bundle      # re-check only
+# teacher: --training.registry-name file://$HOME/soccer_bundle
+```
+
+Options: `--counts walk_kick=200,stand_kick=100` overrides single scenarios,
+`--phase6` adds the Phase-6 scenarios, `--seed-offset N` draws other configs,
+`--placeholder-db` uses the synthetic databases (smoke test only). The raw
+motion-matching output stays in `<out>.raw/` for the visualizer.
+
+The acceptance ([soccer_acceptance.py](motion_matching/soccer_acceptance.py))
+checks every motion, not only samples: ball within 0.25 m (horizontal) of the
+kick foot in the contact frame and resting until then; both kick feet in at
+least 30 % of each kick scenario (standing leg at entry is reported);
+run-up kicks entering in at least 3 of 4 step-phase bins; no contact and
+correct ball placement in the negatives; flat terrain (no boxes, ground plane
+only). Thresholds live in `AcceptanceConfig`.
