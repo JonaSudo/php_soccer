@@ -53,8 +53,13 @@ python -m wbt_training.sim2sim.lupus_kick_sim2sim --onnx .../policy.onnx --dribb
 
 Auf dem Jetson schickt das Behavior `BehaviorCommand(kick_dir=..., mode=...)`. `command_vector` baut daraus das Layout, das in den ONNX-Metadaten steht (`command_obs_cfg`).
 
+## Dribbel-Gewichte einstellen
+
+Die Startwerte stehen in `DribbleRewardCfg` (`config_values/lupus_phase6.py`). Pro Lauf lassen sie sich auf der CLI überschreiben, z. B. `--reward.terms.ball-near-foot.weight 1.0`. `python -m wbt_training.training_runs.dribble_sweep --registry file:///pfad/bundle --near-foot 0.25 0.5 1.0 --along-heading 0.5 1.0 --iterations 5000` druckt eine Launcher-Zeile pro Kombination.
+
+Dribbel-Metriken in `kick_metrics.py` (Eval mit `--kick-metrics.*` und Sim2Sim): `dribble_ball_dist_mean` (Ball zum näheren Fuß), `dribble_loss_rate` (Ball weiter als `dribble_loss_dist` = 0,6 m), `dribble_speed_err_rms` (Ballgeschwindigkeit in Blickrichtung gegen v), `dribble_lateral_speed_mean`. Kontakte im Dribbel-Modus zählen nicht als Fehlkick.
+
 ## Offen
 
-- Gewichte der Dribbel-Rewards und `sigma` nach den ersten GPU-Läufen einstellen
-- Dribbel-Metriken (Ballabstand, Ballverlust) in `kick_metrics.py` ergänzen, sobald ein trainierter Dribbel-Teacher da ist
+- Gewichte der Dribbel-Rewards und `sigma` nach den ersten GPU-Läufen einstellen (Sweep oben)
 - Seitkick (großer `kick_dir`) mit eigenen Clips, z. B. OmniContact `case2_r2l`/`case3_l2r`

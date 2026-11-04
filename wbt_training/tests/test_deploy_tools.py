@@ -246,3 +246,52 @@ def test_dribble_weights_overridable_on_cli():
         config=TYRO_CONIFG,
     )
     assert cfg.reward.terms["ball_near_foot"].weight == 1.25
+
+
+# --------------------------------------------------------------------------- soccer fields through convert/combine
+
+
+def _raw_soccer_motion(path, T, side):
+    np.savez(
+        path,
+        fps=np.array(50),
+        joint_pos=np.zeros((T, 22)),
+        joint_vel=np.zeros((T, 22)),
+        body_pos_w=np.zeros((T, 25, 3)),
+        body_quat_w=np.tile([1.0, 0, 0, 0], (T, 25, 1)),
+        body_lin_vel_w=np.zeros((T, 25, 3)),
+        body_ang_vel_w=np.zeros((T, 25, 3)),
+        joint_names=np.array([f"j{i}" for i in range(22)]),
+        body_names=np.array([f"b{i}" for i in range(25)]),
+        vel_cmd=np.zeros((T, 2), np.float32),
+        object_pos_w=np.ones((T, 3), np.float32),
+        kick_enable=np.ones(T, np.float32),
+        kick_phase=np.zeros(T, np.int8),
+        contact_frame=np.zeros(T, bool),
+        kick_side=np.array(side),
+        scenario=np.array("walk_kick"),
+    )
+
+
+def test_motion_convert_keeps_kick_fields_and_combine_takes_scalars(tmp_path, monkeypatch):
+    from wbt_training.training_runs.motion_convert import convert
+    from wbt_training.utils import multi_motion_helpers as M
+
+    outs = []
+    for i, (T, side) in enumerate(((4, 0), (3, 1))):
+        raw = tmp_path / f"raw{i}.npz"
+        _raw_soccer_motion(raw, T, side)
+        out = tmp_path / f"m{i}_motion.npz"
+        assert convert(str(raw), str(out))
+        with np.load(out) as d:
+            assert d["object_pos_w"].shape == (T, 3) and d["kick_enable"].shape == (T,)
+            assert d["kick_side"].tolist() == [side] * T and "scenario" not in d.files
+        outs.append(out)
+    monkeypatch.setattr(M, "_scratch_dir", lambda: tmp_path)
+    with np.load(M.combine_motions(outs)) as c:
+        assert c["kick_side"].tolist() == [0] * 4 + [1] * 3
+        assert c["kick_phase"].shape == (7,) and c["joint_pos"].shape == (7, 29)
+    # raw files with 0-d fields combine as well (numeric -> per frame, strings dropped)
+    raws = [tmp_path / "raw0.npz", tmp_path / "raw1.npz"]
+    with np.load(M.combine_motions(raws)) as c:
+        assert c["kick_side"].tolist() == [0] * 4 + [1] * 3 and "scenario" not in c.files
