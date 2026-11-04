@@ -16,6 +16,7 @@ import pytest
 SCRIPTS = Path(__file__).resolve().parents[1] / "training_runs"
 LAUNCHERS = (
     "run_terrain_teacher.sh",
+    "run_lupus_kick_teacher.sh",
     "run_terrain_warp_distill.sh",
     "run_lupus_kick_distill.sh",
     "eval_teacher.sh",
@@ -266,6 +267,7 @@ def test_multiple_registries_keep_user_order(launcher, name):
         ("run_terrain_teacher.sh", {"REGISTRY": "file:///missing"}, "does not exist"),
         (
             "run_terrain_teacher.sh",
+    "run_lupus_kick_teacher.sh",
             {"REGISTRY": "https://example.org/artifact"},
             "Invalid REGISTRY",
         ),
@@ -292,7 +294,8 @@ def test_invalid_inputs_fail_before_activation(launcher, name, overrides, messag
 
 def test_valid_remote_entry_does_not_hide_later_invalid_local_input(launcher):
     result, _ = launcher(
-        "run_terrain_teacher.sh", REGISTRY="team/project/motions:v1,file:///missing"
+        "run_terrain_teacher.sh",
+    "run_lupus_kick_teacher.sh", REGISTRY="team/project/motions:v1,file:///missing"
     )
     assert result.returncode != 0
     assert "does not exist" in result.stderr
@@ -320,7 +323,8 @@ def test_distillation_rejects_unpaired_teacher_registries(launcher):
 @pytest.mark.parametrize("suffix", [",", ",,file:///missing"])
 def test_empty_registry_entries_are_rejected(launcher, suffix):
     result, _ = launcher(
-        "run_terrain_teacher.sh", REGISTRY=launcher.registries[0] + suffix
+        "run_terrain_teacher.sh",
+    "run_lupus_kick_teacher.sh", REGISTRY=launcher.registries[0] + suffix
     )
     assert result.returncode != 0
     assert "empty entries" in result.stderr
@@ -382,6 +386,7 @@ def test_conda_root_and_env_name_select_interpreter(launcher):
     shutil.copy2(launcher.bin_dir / "python", target / "python")
     result, command = launcher(
         "run_terrain_teacher.sh",
+    "run_lupus_kick_teacher.sh",
         HSSIM_PYTHON=None,
         CONDA_ROOT=str(conda),
         ENV_NAME="custom",
@@ -458,7 +463,8 @@ def test_remote_cache_includes_namespace_and_reuses_immutable_content(launcher):
     spec = remote_spec(launcher)
     ordered = "wandb://team/first/motions:latest,team/second/motions:latest"
     result, command = launcher(
-        "run_terrain_teacher.sh", REGISTRY=ordered, REMOTE_SPEC=spec
+        "run_terrain_teacher.sh",
+    "run_lupus_kick_teacher.sh", REGISTRY=ordered, REMOTE_SPEC=spec
     )
     assert result.returncode == 0, result.stderr
     names = option(command, "--training.registry-name")
@@ -471,7 +477,8 @@ def test_remote_cache_includes_namespace_and_reuses_immutable_content(launcher):
             == (Path(launcher.registries[0][7:]) / "example_motion.npz").read_bytes()
         )
     result, repeated = launcher(
-        "run_terrain_teacher.sh", REGISTRY=ordered, REMOTE_SPEC=spec
+        "run_terrain_teacher.sh",
+    "run_lupus_kick_teacher.sh", REGISTRY=ordered, REMOTE_SPEC=spec
     )
     assert result.returncode == 0, result.stderr
     assert option(repeated, "--training.registry-name") == names

@@ -67,7 +67,7 @@ def _up_z(q_xyzw: torch.Tensor) -> torch.Tensor:
 
 def collect_step(env: Any, contact: torch.Tensor) -> dict[str, torch.Tensor]:
     """One :class:`KickEpisodeTracker` step from a holosoma LUPUS kick env."""
-    from wbt_training.config_values.lupus_kick import ball_state_w
+    from wbt_training.config_values.lupus_kick import FOOT_BODY_NAMES, ball_state_w
 
     sim = env.simulator
     root = sim.robot_root_states
@@ -80,7 +80,7 @@ def collect_step(env: Any, contact: torch.Tensor) -> dict[str, torch.Tensor]:
     vel_cmd = frame_field(cmd, "vel_cmd", n, dev, width=2)
     target = getattr(cmd, "contact_heading", torch.full((n,), float("nan"), device=dev))
     target = target + frame_field(cmd, "kick_dir", n, dev)
-    return {
+    out = {
         "ball_pos_w": ball[:, :3],
         "ball_vel_w": ball[:, 7:10],
         "base_pos_w": root[:, :3],
@@ -93,7 +93,23 @@ def collect_step(env: Any, contact: torch.Tensor) -> dict[str, torch.Tensor]:
         "kick_phase": frame_field(cmd, "kick_phase", n, dev),
         "contact": contact,
         "target_heading": target,
+        # Phase 6 dribble metrics (kick_mode is 0 for commands without the field)
+        "kick_mode": frame_field(cmd, "kick_mode", n, dev),
     }
+    feet = _feet_pos_w(env, FOOT_BODY_NAMES)
+    if feet is not None:
+        out["feet_pos_w"] = feet
+    return out
+
+
+def _feet_pos_w(env: Any, names: list[str]) -> torch.Tensor | None:
+    sim = env.simulator
+    body_names = getattr(sim, "body_names", None)
+    pos = getattr(sim, "_rigid_body_pos", None)
+    if body_names is None or pos is None:
+        return None
+    body_names = list(body_names)
+    return pos[:, [body_names.index(nm) for nm in names], :3]
 
 
 class KickMetricsEvalCallback(RLEvalCallback):

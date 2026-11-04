@@ -104,6 +104,17 @@ def build_model(xml: Path = LUPUS_XML):
     return model, r, float(b.get("linear_damping", 0.3))
 
 
+def damp_ball(qvel_ball: np.ndarray, linear: float, angular: float, dt: float) -> None:
+    """Linear and angular damping of the free ball's 6 velocities, in place (as PhysX does).
+
+    PhysX damps both, so a ball rolling without slip (thin shell, I = 2/3 m r^2)
+    slows down with ``v' = -(0.6 linear + 0.4 angular) v``. Damping only the
+    linear part would roll ~1.7x further in MuJoCo than in IsaacSim.
+    """
+    qvel_ball[:3] *= max(0.0, 1.0 - linear * dt)
+    qvel_ball[3:6] *= max(0.0, 1.0 - angular * dt)
+
+
 class SimVision:
     """Camera frames at 25-40 Hz with latency/dropouts, delivered to ``on_frame`` after their latency."""
 
@@ -149,6 +160,7 @@ class LupusKickSim2Sim:
 
         self.mj = mujoco
         self.model, self.ball_radius, self.ball_damping = build_model(xml)
+        self.ball_ang_damping = float(_ball_spec().get("angular_damping", self.ball_damping))
         self.model.opt.timestep = sim_dt
         self.data = mujoco.MjData(self.model)
         self.policy = StudentPolicy(onnx)
@@ -276,7 +288,7 @@ class LupusKickSim2Sim:
                 tau = np.clip(self.kp * (self.targets - q) - self.kd * qd, -self.tau_lim, self.tau_lim)
                 d.ctrl[self.act] = tau
                 # rolling loss on turf as linear damping (PhysX/MuJoCo have no rolling friction)
-                d.qvel[self.ball_v : self.ball_v + 3] *= max(0.0, 1.0 - self.ball_damping * self.model.opt.timestep)
+                damp_ball(d.qvel[self.ball_v : self.ball_v + 6], self.ball_damping, self.ball_ang_damping, self.model.opt.timestep)
                 mj.mj_step(self.model, d)
             self.t += dt
             ball_v = d.qvel[self.ball_v : self.ball_v + 3].copy()
@@ -303,6 +315,8 @@ class LupusKickSim2Sim:
                     "kick_phase": torch.tensor([phase]),
                     "contact": torch.tensor([contact]),
                     "target_heading": torch.tensor([yaw + sc.kick_dir]),
+                    "kick_mode": torch.tensor([sc.mode if sc.mode is not None else int(sc.kick_enable)]),
+                    "feet_pos_w": torch.tensor(np.array([d.xpos[self.foot_ids]])),
                 }
             )
         tracker.finish([0], terminated=[bool(tracker.fell[0])])

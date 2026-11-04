@@ -23,6 +23,16 @@ Per episode:
   the commanded (v, omega) while walking (``kick_phase`` 0)
 * ``approach``, ``lateral``, ``speed``: ball x / |y| in the robot heading frame
   at the episode start (|y| to the nearer foot if ``foot_offset_y`` > 0) and the mean commanded v before the kick (grid axes)
+
+Dribble mode (Phase 6, optional step keys ``kick_mode`` [N] and ``feet_pos_w``
+[N, 2, 3]): steps with ``kick_mode`` 2 are dribble steps. Contacts there are
+wanted and do not count as miskicks. Per episode:
+
+* ``dribble``: the episode has dribble steps
+* ``dribble_dist``: mean horizontal distance ball - nearer foot over dribble steps
+* ``dribble_lost``: that distance exceeded ``dribble_loss_dist`` at some dribble step
+* ``dribble_speed_err``: RMS of (ball velocity along the heading - commanded v)
+* ``dribble_lateral_speed``: mean |ball velocity across the heading|
 """
 
 from __future__ import annotations
@@ -49,6 +59,9 @@ STEP_KEYS = (
     "contact",  # [N] bool robot-ball contact this step
     "target_heading",  # [N] direction the kick should go (rad), NaN if unknown
 )
+# Optional (Phase 6 dribble metrics): "kick_mode" [N] (0 ignore, 1 kick, 2 dribble), "feet_pos_w" [N, 2, 3]
+OPTIONAL_STEP_KEYS = ("kick_mode", "feet_pos_w")
+KICK_MODE_DRIBBLE = 2
 
 
 @dataclass(frozen=True)
@@ -62,6 +75,8 @@ class KickMetricsCfg:
     # Lateral ball offset is measured to the nearer kick foot at +-foot_offset_y
     # (LUPUS: 0.133 m); 0 measures it to the base centre line.
     foot_offset_y: float = 0.0
+    # Dribble: ball counts as lost once it is this far from the nearer foot (m)
+    dribble_loss_dist: float = 0.6
 
 
 def _wrap(a: torch.Tensor) -> torch.Tensor:
@@ -92,6 +107,8 @@ class KickEpisodeTracker:
         self.v_sum, self.v_sq, self.w_sq, self.walk_steps = z(), z(), z(), z()
         self.miskick_count = z(torch.long)
         self.pre_steps = z()
+        self.dribble_steps, self.dribble_dist_sum, self.dribble_lost = z(), z(), z(torch.bool)
+        self.dribble_v_sq, self.dribble_lat_sum = z(), z()
 
     def _clear(self, ids: torch.Tensor) -> None:
         for name, value in vars(self).items():
@@ -123,7 +140,8 @@ class KickEpisodeTracker:
         kicking = phase >= 1
         self.intended |= kicking
         self.kick_started |= kicking
-        idle = (phase == 0) & ~self.kick_started
+        dribbling = (f("kick_mode").long() == KICK_MODE_DRIBBLE) if "kick_mode" in s else torch.zeros_like(contact)
+        idle = (phase == 0) & ~self.kick_started & ~dribbling
         self.miskick_count += (contact & idle).long()
         self.miskick |= contact & idle
 
@@ -142,6 +160,20 @@ class KickEpisodeTracker:
         self.steps_since_kick += self.after_kick.long()
 
         self.fell |= (base_p[:, 2] < c.fall_height) | (f("base_up_z").float() < c.fall_up_z)
+
+        if dribbling.any() and "feet_pos_w" in s:
+            feet = f("feet_pos_w").float()[:, :, :2]
+            dist = (feet - ball_p[:, None, :2]).norm(dim=-1).min(dim=1).values
+            h = torch.stack([torch.cos(yaw), torch.sin(yaw)], dim=-1)
+            along = (ball_v[:, :2] * h).sum(-1)
+            lat = (ball_v[:, 0] * h[:, 1] - ball_v[:, 1] * h[:, 0]).abs()
+            zero = torch.zeros_like(dist)
+            self.dribble_steps += dribbling.float()
+            self.dribble_dist_sum += torch.where(dribbling, dist, zero)
+            self.dribble_lost |= dribbling & (dist > c.dribble_loss_dist)
+            e = along - f("cmd_v").float()
+            self.dribble_v_sq += torch.where(dribbling, e * e, zero)
+            self.dribble_lat_sum += torch.where(dribbling, lat, zero)
 
         walk = phase == 0
         ev = f("base_fwd_vel").float() - f("cmd_v").float()
@@ -193,6 +225,12 @@ class KickEpisodeTracker:
                 "v_err": math.sqrt(float(self.v_sq[i]) / walk),
                 "w_err": math.sqrt(float(self.w_sq[i]) / walk),
             }
+            nd = float(self.dribble_steps[i])
+            rec["dribble"] = nd > 0
+            rec["dribble_dist"] = float(self.dribble_dist_sum[i]) / nd if nd else float("nan")
+            rec["dribble_lost"] = bool(self.dribble_lost[i]) if nd else False
+            rec["dribble_speed_err"] = math.sqrt(float(self.dribble_v_sq[i]) / nd) if nd else float("nan")
+            rec["dribble_lateral_speed"] = float(self.dribble_lat_sum[i]) / nd if nd else float("nan")
             self.records.append(rec)
         self._clear(ids)
 
@@ -205,6 +243,7 @@ def _mean(xs: Iterable[float]) -> float:
 def summarize(records: Sequence[dict[str, Any]]) -> dict[str, float]:
     """Plan metrics over a set of episode records."""
     kick = [r for r in records if r["intended"]]
+    dribble = [r for r in records if r.get("dribble")]
     no_kick = [r for r in records if not r["intended"]]
     kicked = [r for r in kick if r["kicked"]]
     return {
@@ -221,6 +260,11 @@ def summarize(records: Sequence[dict[str, Any]]) -> dict[str, float]:
         "termination_rate": _mean(float(r["terminated"]) for r in records),
         "v_err_rms": _mean(r["v_err"] for r in records),
         "w_err_rms": _mean(r["w_err"] for r in records),
+        "dribble_episodes": float(len(dribble)),
+        "dribble_ball_dist_mean": _mean(r["dribble_dist"] for r in dribble),
+        "dribble_loss_rate": _mean(float(r["dribble_lost"]) for r in dribble),
+        "dribble_speed_err_rms": _mean(r["dribble_speed_err"] for r in dribble),
+        "dribble_lateral_speed_mean": _mean(r["dribble_lateral_speed"] for r in dribble),
     }
 
 
@@ -302,6 +346,8 @@ __all__ = [
     "KickEpisodeTracker",
     "KickEvalGrid",
     "KickMetricsCfg",
+    "KICK_MODE_DRIBBLE",
+    "OPTIONAL_STEP_KEYS",
     "STEP_KEYS",
     "summarize",
     "table_to_markdown",

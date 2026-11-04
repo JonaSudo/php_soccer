@@ -27,7 +27,7 @@ Presets (``experiment.py``): ``lupus_kickdir_teacher``,
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -202,33 +202,65 @@ def _with_teacher_obs(cfg: ExperimentConfig, dribble: bool, group_names: tuple[s
     return replace(cfg, observation=replace(cfg.observation, groups=groups))
 
 
-def _with_rewards(cfg: ExperimentConfig, dribble: bool) -> ExperimentConfig:
+@dataclass(frozen=True)
+class DribbleRewardCfg:
+    """Dribble reward starting values (estimates, tune after the first GPU runs).
+
+    Change them here for a new default, or per run on the CLI, e.g.
+    ``--reward.terms.ball-near-foot.weight 1.0`` and
+    ``--reward.terms.ball-near-foot.params '{"sigma": 0.2}'``;
+    ``training_runs/dribble_sweep.py`` prints a grid of such commands.
+    """
+
+    near_foot_weight: float = 0.5
+    near_foot_sigma: float = 0.15  # m
+    along_heading_weight: float = 0.5
+    along_heading_sigma: float = 0.3  # m/s
+    along_heading_lateral_weight: float = 0.5
+
+    def terms(self) -> dict[str, RewardTermCfg]:
+        return {
+            "ball_near_foot": RewardTermCfg(
+                func=f"{_SELF}:ball_near_foot", weight=self.near_foot_weight, params={"sigma": self.near_foot_sigma}
+            ),
+            "ball_along_heading": RewardTermCfg(
+                func=f"{_SELF}:ball_along_heading",
+                weight=self.along_heading_weight,
+                params={"sigma": self.along_heading_sigma, "lateral_weight": self.along_heading_lateral_weight},
+            ),
+        }
+
+
+DRIBBLE_REWARDS = DribbleRewardCfg()
+
+
+def _with_rewards(cfg: ExperimentConfig, dribble: bool, rewards: DribbleRewardCfg | None = None) -> ExperimentConfig:
     terms = dict(cfg.reward.terms)
     old = terms["ball_kick_direction"]
     terms["ball_kick_direction"] = replace(old, func=f"{_SELF}:ball_kick_direction_dir")
     if dribble:
         old_u = terms["ball_untouched"]
         terms["ball_untouched"] = replace(old_u, func=f"{_SELF}:BallUntouchedUnlessDribble")
-        # weights are starting values (estimate)
-        terms["ball_near_foot"] = RewardTermCfg(func=f"{_SELF}:ball_near_foot", weight=0.5, params={"sigma": 0.15})
-        terms["ball_along_heading"] = RewardTermCfg(
-            func=f"{_SELF}:ball_along_heading", weight=0.5, params={"sigma": 0.3, "lateral_weight": 0.5}
-        )
+        terms.update((rewards or DRIBBLE_REWARDS).terms())
     return replace(cfg, reward=replace(cfg.reward, terms=terms))
 
 
-def build_phase6_teacher(teacher: ExperimentConfig, *, dribble: bool) -> ExperimentConfig:
+def build_phase6_teacher(
+    teacher: ExperimentConfig, *, dribble: bool, rewards: DribbleRewardCfg | None = None
+) -> ExperimentConfig:
     """Phase-3 teacher + kick_dir (and dribble mode) inputs and rewards."""
-    cfg = _with_rewards(_with_teacher_obs(_with_command(teacher), dribble, _TEACHER_GROUPS), dribble)
+    cfg = _with_rewards(_with_teacher_obs(_with_command(teacher), dribble, _TEACHER_GROUPS), dribble, rewards)
     name = "lupus_dribble_teacher" if dribble else "lupus_kickdir_teacher"
     return replace(cfg, training=replace(cfg.training, name=name))
 
 
-def build_phase6_distill(student: ExperimentConfig, *, dribble: bool) -> ExperimentConfig:
+def build_phase6_distill(
+    student: ExperimentConfig, *, dribble: bool, rewards: DribbleRewardCfg | None = None
+) -> ExperimentConfig:
     """Phase-4 student + the same changes; student command gets kick_dir (and the 3 modes)."""
     from wbt_training.config_values.ball_distillation import with_phase6_command
 
-    cfg = _with_rewards(_with_teacher_obs(_with_command(student), dribble, _DISTILL_GROUPS), dribble)
+    cfg = _with_rewards(_with_teacher_obs(_with_command(student), dribble, _DISTILL_GROUPS), dribble, rewards)
     cfg = replace(cfg, observation=with_phase6_command(cfg.observation, kick_dir=True, dribble=dribble))
     actor = cfg.observation.groups["actor_obs"]
     params = {**actor.terms["command"].params, "kick_dir_max": KICK_DIR_MAX}
@@ -240,6 +272,8 @@ def build_phase6_distill(student: ExperimentConfig, *, dribble: bool) -> Experim
 
 __all__ = [
     "BallUntouchedUnlessDribble",
+    "DRIBBLE_REWARDS",
+    "DribbleRewardCfg",
     "KICK_DIR_MAX",
     "LupusPhase6MotionCommand",
     "ball_along_heading",
